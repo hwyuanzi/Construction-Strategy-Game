@@ -1,6 +1,6 @@
-import { greedyPlan } from './planner'
-import type { PlayerView } from './types'
+import { searchMove } from './planner'
+import type { Match } from './engine'
 
-self.addEventListener('message', (event: MessageEvent<PlayerView>) => {
-  self.postMessage(greedyPlan(event.data))
+self.addEventListener('message', (event: MessageEvent<Match>) => {
+  self.postMessage(searchMove(event.data, 'hard')?.action)
 })

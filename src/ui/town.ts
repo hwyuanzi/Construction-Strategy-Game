@@ -1,242 +1,318 @@
-import { currentStage } from '../game/engine'
-import { MODES } from '../game/rules'
-import type { MatchState, Project } from '../game/types'
+import { BUILDINGS } from '../game/engine'
+import type { Building, Match, Move } from '../game/engine'
 
-export const TOWN_WIDTH = 920
-export const TOWN_HEIGHT = 560
+export const TOWN_WIDTH = 960
+export const TOWN_HEIGHT = 550
+export const BUILD_DURATION = 930
 
 type Point = [number, number, number]
 type Lot = [number, number]
+type Colors = [string, string, string]
+type Project = (x: number, y: number, z: number) => readonly [number, number]
 
-const xRows = [-5.7, -1.8, 2.1, 6]
-const lots: Lot[][] = [
-  [[-4.6, -4.8], [0.4, -4.8], [5.1, -4.8], ...xRows.map(x => [x, -7.7] as Lot), ...xRows.map(x => [x, -1.75] as Lot)],
-  [[-4.6, 3.9], [0.4, 3.9], [5.1, 3.9], ...xRows.map(x => [x, 7.25] as Lot), ...xRows.map(x => [x, 1.8] as Lot)],
-]
+export const BUILDING_COLORS: Record<Building, string> = {
+  house: '#a84f37',
+  library: '#9a6925',
+  commercial: '#377366',
+  apartment: '#a55543',
+  skyscraper: '#645784',
+}
 
-const seatColors = [
-  { roof: '#b65d43', wall: '#d48764', shade: '#965544', steel: '#9a513c' },
-  { roof: '#437b7a', wall: '#7aaba2', shade: '#3d6c69', steel: '#356966' },
-]
+const heights: Record<Building, number> = {
+  house: 1.47, library: 1.62, commercial: 1.32, apartment: 2.61, skyscraper: 3.82,
+}
 
 export function projectPoint(x: number, y: number, z = 0) {
-  return [460 + (x - y) * 25.6, 282 + (x + y) * 14 - z * 34] as const
+  return [480 + (x - y) * 25.8, 270 + (x + y) * 13.6 - z * 32] as const
 }
 
-export function plots(state: MatchState) {
-  return lots.flatMap((entries, seat) => {
-    const sites = state.projects.filter(site => site.seat === seat)
-    return entries.map(([x, y], index) => ({ x, y, seat, index, site: sites[index] }))
-  })
+export function plots(count: number): Lot[] {
+  if (count <= 4) {
+    const small: Lot[][] = [
+      [[0, -2.5]],
+      [[-3.6, 2.8], [3.6, -2.7]],
+      [[-4.7, 2.7], [0, -2.35], [5.2, -3.7]],
+      [[-5.8, 3.4], [-2.05, -1.9], [2.05, 2.6], [5.45, -3.2]],
+    ]
+    return small[count - 1]
+  }
+
+  const xs = [-5.85, -2.05, 1.9, 5.7]
+  const outer = xs.flatMap(x => [[x, -5.4], [x, 4.4]] as Lot[])
+  const near = xs.map(x => [x, -2] as Lot)
+  return [...outer, ...near].slice(0, count)
 }
 
-export function elevation(site: Project, state: MatchState) {
-  if (site.status === 'complete') return site.type === 'skyscraper' ? 5.25 : site.type === 'commercial' ? 2.05 : 1.75
-  if (site.status !== 'active') return 0.2
-  const stage = currentStage(state.mode, site)
-  const progress = site.stage + site.work / stage.work
-  if (site.type === 'skyscraper') return 0.2 + progress * 1.23
-  if (site.type === 'commercial') return 0.18 + progress * 0.53
-  return 0.25 + progress * 0.45
-}
-
-export function paintTown(ctx: CanvasRenderingContext2D, state: MatchState, previous?: MatchState, time = 1) {
-  const region = (points: Point[], color: string, outline?: string) => {
+function painter(ctx: CanvasRenderingContext2D, project: Project) {
+  function region(points: Point[], color: string, outline?: string) {
     ctx.beginPath()
-    for (const [[x, y], i] of points.map(point => projectPoint(...point)).map((point, index) => [point, index] as const)) {
-      if (i) ctx.lineTo(x, y)
+    points.forEach((p, index) => {
+      const [x, y] = project(...p)
+      if (index) ctx.lineTo(x, y)
       else ctx.moveTo(x, y)
-    }
+    })
     ctx.closePath()
     ctx.fillStyle = color
     ctx.fill()
     if (outline) {
       ctx.strokeStyle = outline
-      ctx.lineWidth = 0.65
+      ctx.lineWidth = .65
       ctx.stroke()
     }
   }
-  const line = (a: Point, b: Point, color: string, width = 1) => {
-    const start = projectPoint(...a)
-    const end = projectPoint(...b)
+
+  function line(a: Point, b: Point, color: string, width = 1) {
     ctx.beginPath()
-    ctx.moveTo(...start)
-    ctx.lineTo(...end)
+    ctx.moveTo(...project(...a))
+    ctx.lineTo(...project(...b))
     ctx.strokeStyle = color
     ctx.lineWidth = width
     ctx.stroke()
   }
-  const plane = (x: number, y: number, w: number, d: number, z: number, fill: string, edge?: string) =>
+
+  function plane(x: number, y: number, w: number, d: number, z: number, fill: string, edge?: string) {
     region([[x, y, z], [x + w, y, z], [x + w, y + d, z], [x, y + d, z]], fill, edge)
-  const solid = (x: number, y: number, w: number, d: number, base: number, h: number, colors: [string, string, string]) => {
-    const top = base + h
+  }
+
+  function solid(x: number, y: number, w: number, d: number, base: number, height: number, colors: Colors) {
+    const top = base + height
     region([[x, y + d, base], [x + w, y + d, base], [x + w, y + d, top], [x, y + d, top]], colors[1])
     region([[x + w, y, base], [x + w, y + d, base], [x + w, y + d, top], [x + w, y, top]], colors[2])
     plane(x, y, w, d, top, colors[0])
   }
 
-  ctx.clearRect(0, 0, TOWN_WIDTH, TOWN_HEIGHT)
+  return { region, line, plane, solid }
+}
+
+type Painter = ReturnType<typeof painter>
+
+function tree(paint: Painter, x: number, y: number, scale = 1) {
+  paint.plane(x - .08, y - .08, .59 * scale, .49 * scale, .045, '#485d4038')
+  paint.solid(x - .05, y - .05, .10, .10, 0, .53 * scale, ['#9b805d', '#7e674c', '#675741'])
+  paint.solid(x - .26 * scale, y - .25 * scale, .54 * scale, .51 * scale, .31 * scale, .42 * scale, ['#93a46d', '#6c8b5b', '#4c704f'])
+  paint.solid(x - .17 * scale, y - .16 * scale, .35 * scale, .34 * scale, .73 * scale, .24 * scale, ['#aeb779', '#87a16a', '#628454'])
+}
+
+function modelScale(kind: Building, progress: number) {
+  return .54 + .46 * Math.min(progress / BUILDINGS[kind].bricks, 1)
+}
+
+function building(paint: Painter, kind: Building, x: number, y: number, progress: number) {
+  const { line, plane, region, solid } = paint
+  const scale = modelScale(kind, progress)
+  const h = heights[kind] * scale
+  const west = x - .93
+  const south = y - .71
+  const front = y + .71
+  const east = x + .93
+  const w = 1.86
+  const d = 1.42
+  const base = .16
+  const roof = base + h
+  const colors: Record<Building, Colors> = {
+    house: ['#ead9b6', '#f1ddbf', '#cbb99f'],
+    library: ['#d6c28d', '#f4dfb2', '#bfaa82'],
+    commercial: ['#a8c8b5', '#99bcb2', '#618f86'],
+    apartment: ['#d59c76', '#e8b58c', '#b78465'],
+    skyscraper: ['#9b94b9', '#9999bc', '#696d96'],
+  }
+  solid(west - .12, south - .12, w + .24, d + .24, .055, .105, ['#ded8bf', '#aeab94', '#969b85'])
+  solid(west, south, w, d, base, h, colors[kind])
+
+  function window(x1: number, z: number, width: number, height: number, color: string) {
+    region([[x1, front, z], [x1 + width, front, z], [x1 + width, front, z + height], [x1, front, z + height]], color)
+  }
+
+  function sideWindow(y1: number, z: number, width: number, height: number, color: string) {
+    region([[east, y1, z], [east, y1 + width, z], [east, y1 + width, z + height], [east, y1, z + height]], color)
+  }
+
+  if (kind === 'house') {
+    const ridge = roof + .39
+    region([[west - .08, y, ridge], [east + .08, y, ridge], [east + .08, front + .09, roof], [west - .08, front + .09, roof]], '#ba674c')
+    region([[west - .08, south - .09, roof], [east + .08, south - .09, roof], [east + .08, y, ridge], [west - .08, y, ridge]], '#de8a6c')
+    region([[east, south, roof], [east, y, ridge], [east, front, roof]], '#945545')
+    for (let i = 1; i <= 7; i++) line([west + i * .24, y, ridge], [west + i * .24, front + .09, roof], '#78392238', .7)
+    window(x - .13, base, .27, .55 * scale, '#805e48')
+    for (const wx of [west + .22, east - .50]) {
+      window(wx, base + .33 * scale, .29, .34 * scale, '#577c7d')
+      line([wx + .145, front, base + .33 * scale], [wx + .145, front, base + .67 * scale], '#f4e8ca', .75)
+    }
+    sideWindow(y - .18, base + .35 * scale, .32, .32 * scale, '#638083')
+    solid(x + .36, y - .25, .16, .17, roof + .18, .27, ['#e3a687', '#b66e57', '#965444'])
+  } else if (kind === 'library') {
+    solid(west - .06, south - .07, w + .12, d + .14, roof, .095, ['#f3d99f', '#c4a668', '#ad9058'])
+    solid(x - .58, front - .08, 1.16, .34, .1, .11, ['#ded3af', '#aea181', '#938867'])
+    for (const wx of [x - .49, x - .20, x + .12, x + .40]) {
+      solid(wx, front + .09, .09, .12, base + .05, h - .13, ['#fff0be', '#ecd6a1', '#c2ae83'])
+    }
+    window(x - .13, base, .26, .66 * scale, '#735f57')
+    solid(x - .61, front - .12, 1.22, .35, roof - .04, .13, ['#f2d89c', '#c2a975', '#b49b67'])
+    for (const wy of [south + .22, y, front - .30]) sideWindow(wy, base + h * .36, .21, h * .32, '#6d857d')
+    solid(x - .25, y - .32, .5, .42, roof + .09, .13, ['#8fa8a0', '#7f9990', '#688278'])
+  } else if (kind === 'commercial') {
+    for (const offset of [0, .66]) {
+      region([[west, south + offset, roof], [east, south + offset, roof], [east, south + offset + .58, roof + .28], [west, south + offset + .58, roof + .28]], '#c0d1b9')
+      region([[east, south + offset, roof], [east, south + offset + .58, roof + .28], [east, south + offset + .58, roof]], '#60887b')
+      region([[west, south + offset + .58, roof], [east, south + offset + .58, roof], [east, south + offset + .58, roof + .28], [west, south + offset + .58, roof + .28]], '#668f8a')
+    }
+    window(x - .54, base, .66, h * .64, '#486e69')
+    window(x + .31, base + h * .31, .37, h * .26, '#dcece1')
+    for (let i = 1; i < 5; i++) {
+      const z = base + h * i * .11
+      line([x - .54, front, z], [x + .12, front, z], '#a4c3b5', .8)
+    }
+    sideWindow(y - .42, base + h * .35, .85, h * .22, '#4a786e')
+  } else {
+    const tall = kind === 'skyscraper'
+    const floors = Math.max(2, Math.round((tall ? 7 : 5) * scale))
+    for (let floor = 0; floor < floors; floor++) {
+      const z = base + h * (floor + .25) / floors
+      const pane = h / floors * .43
+      for (const wx of [west + .18, west + .58, west + .99, west + 1.39]) {
+        window(wx, z, .25, pane, tall ? '#dce6ec' : '#526f74')
+      }
+      for (const wy of [south + .17, south + .56, south + .95]) {
+        sideWindow(wy, z, .25, pane, tall ? '#bfcadd' : '#738f87')
+      }
+      if (!tall && floor > 0) solid(x - .48, front - .04, .94, .23, z - .09, .07, ['#e7c29c', '#c8936e', '#a87358'])
+    }
+    const trim: Colors = tall ? ['#c5bfd5', '#8881a5', '#746c92'] : ['#e6c499', '#b87e60', '#98694f']
+    solid(west - .045, south - .045, w + .09, d + .09, roof, .09, trim)
+    if (tall) {
+      solid(x - .49, y - .31, .98, .62, roof + .09, .24, trim)
+      line([x, y, roof + .33], [x, y, roof + .78], '#535476', 1.2)
+    } else {
+      solid(x - .55, y - .30, .73, .48, roof + .09, .08, ['#94a97b', '#74896c', '#596f56'])
+      solid(x + .29, y + .06, .28, .27, roof + .09, .18, trim)
+    }
+  }
+}
+
+export function paintThumbnail(ctx: CanvasRenderingContext2D, kind: Building) {
+  const scale = kind === 'skyscraper' ? 9 : 12
+  const project: Project = (x, y, z) => [42 + (x - y) * scale, 45 + (x + y) * scale * .52 - z * scale]
+  const paint = painter(ctx, project)
+  ctx.clearRect(0, 0, 84, 68)
+  paint.plane(-1.17, -.98, 2.54, 2.07, .01, '#82775132')
+  building(paint, kind, 0, 0, BUILDINGS[kind].bricks)
+}
+
+export function animationLevel(move: Move, time: number) {
+  const rise = Math.min(1, time / .58)
+  const settle = move.stars ? Math.max(0, (time - .78) / .22) : 0
+  return (move.before + move.bricks * (1 - (1 - rise) ** 3)) * (1 - settle ** 2)
+}
+
+export function paintTown(ctx: CanvasRenderingContext2D, match: Match, time = 1, focused?: number) {
+  const { region, line, plane, solid } = painter(ctx, projectPoint)
+  const paint = { region, line, plane, solid }
+  const lots = plots(match.sites.length)
+  const recent = time < 1 ? match.moves.at(-1) : undefined
+
   const water = ctx.createLinearGradient(0, 0, 0, TOWN_HEIGHT)
-  water.addColorStop(0, '#d9dfd2')
-  water.addColorStop(1, '#9bb9b3')
+  water.addColorStop(0, '#d9e6d7')
+  water.addColorStop(1, '#90b8b4')
   ctx.fillStyle = water
   ctx.fillRect(0, 0, TOWN_WIDTH, TOWN_HEIGHT)
-  for (let inset = 0.75; inset <= 2.8; inset += 0.5) {
-    plane(-8.4 - inset, -8.6 - inset, 16.8 + inset * 2, 17.2 + inset * 2, -0.64, '#ffffff00', '#f3f4da95')
+  for (let inset = .6; inset <= 2.6; inset += .55) {
+    plane(-8.2 - inset, -8.1 - inset, 16.4 + inset * 2, 16.2 + inset * 2, -.52, '#0000', '#f0f5dd9c')
   }
-  for (let ripple = 0; ripple < 170; ripple++) {
-    const x = ((ripple * 127 + 13) % TOWN_WIDTH)
-    const y = ((ripple * 151 + 71) % TOWN_HEIGHT)
-    ctx.fillStyle = ripple % 3 === 0 ? '#f3f6df8e' : '#365e5925'
-    ctx.fillRect(x, y, 3 + (ripple % 8) * 1.9, 0.7)
+  for (let ripple = 0; ripple < 145; ripple++) {
+    const x = (ripple * 131 + 17) % TOWN_WIDTH
+    const y = (ripple * 157 + 47) % TOWN_HEIGHT
+    ctx.fillStyle = ripple % 3 ? '#f2f7e288' : '#2f625628'
+    ctx.fillRect(x, y, 3 + ripple % 8 * 1.7, .75)
   }
-  plane(-8.51, -8.42, 17.16, 17.59, -0.5, '#35584f40')
-  solid(-8.4, -8.6, 16.8, 17.2, -0.58, 0.58, ['#eee0ba', '#ad9c7d', '#8d8872'])
-  plane(-8.05, -8.24, 16.1, 16.48, 0.015, '#c7cda7', '#8c9b81')
-  for (const y of [-8.38, 8.24]) {
-    for (let x = -7.9; x < 8; x += 0.7) line([x, y, 0.03], [x, y + 0.15, 0.03], '#a99b7e91', .6)
+  plane(-8.22, -7.94, 16.77, 16.45, -.52, '#31594f40')
+  solid(-8.2, -8.1, 16.4, 16.2, -.59, .59, ['#e8dbb4', '#a79b7f', '#868774'])
+  plane(-7.86, -7.78, 15.72, 15.56, .014, '#bfcba5', '#9ea183')
+  for (let step = -7.64; step <= 7.75; step += .48) {
+    line([step, 7.78, .028], [step, 8.05, .028], '#9d916fa1', .7)
+    line([7.86, step, .028], [8.16, step, .028], '#9d916fa1', .7)
   }
-  plane(-8.4, -1.04, 16.8, 2.08, 0.045, '#a9ada0')
-  plane(-8.4, -0.79, 16.8, 1.58, 0.05, '#58645e')
-  for (let x = -8.12; x < 8; x += 0.78) line([x, 0, 0.055], [x + 0.39, 0, 0.055], '#ddd5ac', 1.05)
-  for (const x of [-7, 6.7]) {
-    for (let offset = -0.6; offset <= 0.6; offset += 0.22) plane(x, offset, 0.42, 0.105, 0.055, '#dbe0cd')
+  plane(-8.18, -.99, 16.36, 1.98, .035, '#ded8b9')
+  plane(-8.18, -.71, 16.36, 1.42, .045, '#657068')
+  for (let x = -7.96; x < 7.8; x += .73) line([x, 0, .052], [x + .36, 0, .052], '#f0e2b2', 1.1)
+  for (const x of [-7.09, 6.79]) {
+    for (let offset = -.54; offset < .63; offset += .20) plane(x, offset, .45, .09, .054, '#ebebd6')
   }
-  for (const x of [-7.9, 7.6]) {
-    plane(x, -8.3, 0.3, 7.2, 0.025, '#d4d5c2')
-    plane(x, 1.05, 0.3, 7.25, 0.025, '#d4d5c2')
-  }
-
-  const units = plots(state).map(plot => ({ ...plot, plot: true as const }))
-  const surroundings = [
-    [-7.35, -6.5], [-7.25, -5.8], [-7.3, -2.3], [-7.4, 1.58], [-7.0, 1.8],
-    [-6.95, 5.6], [-7.2, 6.0], [-4.4, 6.8], [-2.2, 5.6], [-2.5, -4.2],
-    [3.7, -6.3], [7.4, -7.8], [7.52, -5.45], [7.45, 1.55], [7.46, 2.05],
-    [7.47, 5.7], [3.35, 7.82], [-4.35, -7.95], [4.2, 1.38],
-  ].map(([x, y], index) => ({ x, y, index, plot: false as const }))
-  const trees = (x: number, y: number, index: number) => {
-    const z = 0.35 + (index % 3) * 0.09
-    plane(x - 0.08, y - 0.08, 0.58, 0.55, 0.04, '#596c5633')
-    solid(x - 0.055, y - 0.055, 0.11, 0.11, 0, z, ['#8b7451', '#7b684d', '#66593f'])
-    solid(x - 0.29, y - 0.27, 0.56, 0.55, z - 0.15, 0.44, ['#799469', '#5d7d59', '#46674d'])
-    solid(x - 0.18, y - 0.17, 0.38, 0.36, z + 0.23, 0.26, ['#a1ad76', '#839b68', '#658858'])
-  }
-  const crane = (x: number, y: number, height: number, index: number) => {
-    const z = Math.max(2.15, height + 0.75)
-    const color = index ? '#9a7f38' : '#b37d2c'
-    const arm = 1.57
-    solid(x - 0.18, y - 0.18, 0.36, 0.36, 0.09, 0.11, ['#bbb7a6', '#8d8f85', '#7a8278'])
-    line([x, y, 0.16], [x, y, z], '#a76f24', 2.3)
-    line([x + 0.13, y, 0.15], [x + 0.13, y, z], '#dfad54', 1.4)
-    for (let rung = 0.15; rung < z - 0.24; rung += 0.27) line([x, y, rung], [x + 0.13, y, rung + 0.23], color, 1)
-    line([x - 0.53, y, z], [x + arm, y, z], '#a5742e', 2.4)
-    line([x - 0.53, y, z], [x, y, z + 0.31], '#e0b264', 1.15)
-    line([x, y, z + 0.31], [x + arm, y, z], '#e0b264', 1.1)
-    const hook = x + 1.2 + (time < 1 ? Math.sin(time * Math.PI * 2) * 0.22 : 0)
-    line([hook, y, z], [hook, y, z - 0.63], '#544f47', 0.85)
-    line([hook, y, z - 0.63], [hook + 0.12, y, z - 0.63], '#544f47', 1.1)
-  }
-
-  for (const tile of units) {
-    const { x, y, site } = tile
-    if (!site && tile.index > 3) continue
-    plane(x - 1.42, y - 1.18, 2.84, 2.36, 0.055, site ? '#e3d3af' : '#d0d3ae', site ? '#aa9d80' : '#a4ad8d')
-    if (site && site.status === 'active') {
-      for (let stripe = 0; stripe < 9; stripe++) {
-        const start = x - 1.31 + stripe * 0.29
-        line([start, y + 1.12, 0.06], [start + 0.19, y + 1.12, 0.06], seatColors[tile.seat].steel, 1.75)
-      }
+  for (const side of [-1, 1]) {
+    const y = side * 6.92
+    plane(-7.14, y, 14.28, .31, .031, '#d9d7b2')
+    for (const x of [-7.15, 6.85]) {
+      plane(x, -7.0, .29, 6.0, .027, '#d9d7b2')
+      plane(x, 1, .29, 6.0, .027, '#d9d7b2')
     }
   }
-  const decor = [
-    { x: -3.02, y: -0.31, color: ['#e4d1a5', '#c3ad80', '#998660'] as [string, string, string] },
-    { x: 3.5, y: 0.42, color: ['#a2b9bb', '#7a9299', '#617a82'] as [string, string, string] },
+
+  for (const [index, [x, y]] of lots.entries()) {
+    const selected = focused === index
+    const kind = match.sites[index]
+    plane(x - 1.42, y - 1.12, 2.84, 2.24, .055, selected ? '#f2e1a9' : '#dfd2ae', selected ? BUILDING_COLORS[kind] : '#aaa588')
+    plane(x - .82, y - .46, 2.28, 1.64, .064, '#60786139')
+    for (let dash = 0; dash < 7; dash++) {
+      const sx = x - 1.21 + dash * .34
+      line([sx, y + 1.07, .064], [sx + .19, y + 1.07, .064], BUILDING_COLORS[kind], 1.8)
+    }
+  }
+
+  for (const [x, y, color] of [
+    [-3.2 + (time < 1 ? time * 1.25 : 0), -.34, '#c48846'],
+    [3.6 - (time < 1 ? time * .9 : 0), .34, '#69928f'],
+  ] as const) {
+    solid(x, y, .70, .27, .07, .12, ['#eed7a2', color, '#6e7865'])
+    solid(x + .38, y, .24, .27, .19, .12, ['#efe5c1', color, '#64766b'])
+  }
+  for (const [x, y] of [[2.75, 10.85], [-3.6, -10.35]]) {
+    region([[x - .71, y, -.43], [x - .38, y - .16, -.43], [x + .61, y - .16, -.43], [x + .61, y + .17, -.43], [x - .38, y + .17, -.43]], '#f5ead3', '#648a80')
+    region([[x, y, .34], [x - .49, y, -.40], [x + .08, y, -.40]], '#fff8e6', '#73968b')
+    line([x + .72, y, -.44], [x + 1.51, y, -.44], '#f5f5ddaf', 1.2)
+  }
+
+  const greenery: Lot[] = [
+    [-7.45,-6.55], [-7.37,-3.63], [-7.3,1.51], [-7.3,2.08], [-5.57,7.27], [-4.9,7.37],
+    [-2.73,6.32], [1.5,7.27], [4.6,7.35], [6.85,7.12], [7.44,3.52], [7.42,1.34],
+    [7.45,-1.37], [7.29,-7.47], [5.99,-7.36], [1.25,-7.43], [-2.87,-7.32], [-5.25,-7.45],
+    [-3.67,2.43], [.95,2.24], [3.82,2.13], [-5.38,-3.61], [.03,-3.62], [4.9,-2.74],
   ]
-  for (const vehicle of decor) {
-    solid(vehicle.x, vehicle.y, 0.67, 0.29, 0.07, 0.1, vehicle.color)
-    solid(vehicle.x + 0.25, vehicle.y, 0.28, 0.29, 0.16, 0.10, vehicle.color)
+  const scenery = greenery.filter(([x, y]) => lots.every(([lx, ly]) => Math.abs(lx - x) > 1.47 || Math.abs(ly - y) > 1.22))
+  const units = [
+    ...scenery.map(([x, y], i) => ({ x, y, scale: .81 + i % 4 * .125, site: -1 })),
+    ...lots.map(([x, y], site) => ({ x, y, scale: 1, site })),
+  ].sort((a, b) => a.x + a.y - b.x - b.y)
+  for (const { x, y, scale, site } of units) {
+    if (site < 0) {
+      tree(paint, x, y, scale)
+      continue
+    }
+    const kind = match.sites[site]
+    const level = recent?.site === site ? animationLevel(recent, time) : match.progress[site]
+    building(paint, kind, x, y, level)
+    if (kind === 'house') tree(paint, x + 1.09, y + .82, .59)
+    else solid(x - 1.11, y + .82, .26, .12, .055, .13, ['#e1b667', '#bf8b44', '#9b733e'])
+    if (recent?.site === site && time < .69) {
+      const step = time / .69 * recent.bricks
+      const fall = step % 1
+      const z = .5 + heights[kind] * modelScale(kind, level) + (1 - fall ** 2) * .75
+      const offset = (Math.floor(step) - (recent.bricks - 1) / 2) * .19
+      solid(x + offset, y - .12, .21, .18, z, .14, ['#f5bc6f', '#d98649', '#a95c35'])
+    }
   }
-  for (const [x, y] of [[2.2, 11.1], [2.3, -10.6]]) {
-    region([[x - 0.72, y, -0.57], [x - 0.36, y - 0.17, -0.57], [x + 0.65, y - 0.17, -0.57], [x + 0.65, y + 0.17, -0.57], [x - 0.36, y + 0.17, -0.57]], '#f6efda', '#557b71')
-    region([[x, y, 0.13], [x - 0.48, y, -0.49], [x + 0.04, y, -0.49]], '#fff9e7', '#557b71')
-    line([x + 0.7, y, -0.58], [x + 1.54, y, -0.58], '#f4f5e49e', 1.1)
-  }
 
-  for (const tile of [...units, ...surroundings].sort((a, b) => a.x + a.y - b.x - b.y)) {
-    const { x, y, index } = tile
-    if (!tile.plot) {
-      trees(x, y, index)
-      continue
+  if (recent?.stars && time > .42) {
+    const [x, y] = lots[recent.site]
+    const [px, py] = projectPoint(x, y, heights[match.sites[recent.site]] + .52)
+    const burst = (time - .42) / .58
+    ctx.globalAlpha = 1 - burst
+    for (let i = 0; i < 12; i++) {
+      const theta = i * Math.PI / 6
+      const distance = 8 + 42 * burst
+      const sx = px + Math.cos(theta) * distance
+      const sy = py + Math.sin(theta) * distance - 14 * burst
+      ctx.fillStyle = i % 2 ? '#fff5cb' : '#e5ad44'
+      ctx.fillRect(sx, sy, 3 + i % 3, 3 + i % 3)
     }
-    const site = tile.site
-    if (!site) {
-      if (index <= 3) {
-        line([x - 0.14, y, 0.07], [x + 0.14, y, 0.07], '#a2ad94', 0.8)
-        line([x, y - 0.15, 0.07], [x, y + 0.15, 0.07], '#a2ad94', 0.8)
-      }
-      continue
-    }
-    const style = seatColors[tile.seat]
-    const gone = site.status === 'abandoned' || site.status === 'expired'
-    if (gone) {
-      plane(x - 0.95, y - 0.73, 1.9, 1.46, 0.06, '#c8c5ae')
-      continue
-    }
-    const old = previous?.projects.find(item => item.id === site.id)
-    const from = old && previous ? elevation(old, previous) : 0.1
-    const h = previous ? from + (elevation(site, state) - from) * time : elevation(site, state)
-    const finished = site.status === 'complete' && (!old || old.status === 'complete' || time > 0.82)
-    const stages = MODES[state.mode].contracts[site.type].stages
-    const progress = Math.min(site.stage, stages.length) + (site.status === 'active' ? site.work / stages[site.stage].work : 0)
-    const baseX = x - 1.0, baseY = y - 0.74
-    const width = 2, depth = 1.48
-    plane(baseX + 0.23, baseY + 0.29, width + 0.2, depth + 0.18, 0.065, '#71807435')
-    solid(baseX - 0.10, baseY - 0.10, width + 0.20, depth + 0.20, 0.06, 0.12, ['#c0c2af', '#959d89', '#818b7b'])
-
-    if (site.type === 'house' && (progress >= 2 || finished)) {
-      const walls = Math.max(0.52, Math.min(h - 0.22, 1.19))
-      solid(baseX, baseY, width, depth, 0.18, walls, [style.wall, '#e6dec1', '#bcbaa3'])
-      const eave = 0.18 + walls
-      const ridge = eave + (finished ? 0.47 : Math.max(0.19, h - eave))
-      region([[baseX - 0.08, y, ridge], [baseX + width + 0.08, y, ridge], [baseX + width + 0.08, baseY + depth + 0.08, eave], [baseX - 0.08, baseY + depth + 0.08, eave]], style.roof)
-      region([[baseX - 0.08, baseY - 0.08, eave], [baseX + width + 0.08, baseY - 0.08, eave], [baseX + width + 0.08, y, ridge], [baseX - 0.08, y, ridge]], style.wall)
-      region([[baseX + width, baseY, eave], [baseX + width, y, ridge], [baseX + width, baseY + depth, eave]], style.shade)
-      for (let trim = 0; trim < 4; trim++) {
-        const roofX = baseX + 0.27 + trim * 0.47
-        line([roofX, y, ridge], [roofX, baseY + depth + 0.08, eave], '#635d4c3b', 0.8)
-      }
-      for (const windowX of [baseX + 0.27, baseX + 1.45]) {
-        region([[windowX, baseY + depth + 0.007, 0.52], [windowX + 0.27, baseY + depth + 0.007, 0.52], [windowX + 0.27, baseY + depth + 0.007, 0.89], [windowX, baseY + depth + 0.007, 0.89]], '#6d858b')
-      }
-      region([[x - 0.12, baseY + depth + 0.01, 0.18], [x + 0.14, baseY + depth + 0.01, 0.18], [x + 0.14, baseY + depth + 0.01, 0.75], [x - 0.12, baseY + depth + 0.01, 0.75]], '#9a805b')
-      if (finished) trees(x + 1.04, y + 0.94, index)
-    } else if (finished || (site.type !== 'house' && progress >= 2)) {
-      const top = Math.max(h, 0.50)
-      solid(baseX, baseY, width, depth, 0.18, top - 0.18, [style.wall, '#bcc5b8', '#889e98'])
-      for (let floor = 0.45; floor < top - 0.2; floor += 0.44) {
-        for (let wx = 0.18; wx < width - 0.18; wx += 0.38) {
-          region([[baseX + wx, baseY + depth + 0.006, floor], [baseX + wx + 0.24, baseY + depth + 0.006, floor], [baseX + wx + 0.24, baseY + depth + 0.006, floor + 0.20], [baseX + wx, baseY + depth + 0.006, floor + 0.20]], '#648087')
-        }
-        line([baseX + width + 0.01, baseY + 0.15, floor + 0.10], [baseX + width + 0.01, baseY + depth - 0.15, floor + 0.10], '#5b7980', 3.25)
-      }
-      solid(baseX - 0.06, baseY - 0.06, width + 0.12, depth + 0.12, top, 0.085, [style.roof, style.shade, style.steel])
-      if (finished) solid(x - 0.35, y - 0.26, 0.7, 0.52, top + 0.08, 0.33, ['#d7dace', '#aeb7ac', '#8c9a8d'])
-    } else if (progress > 0.02) {
-      const level = Math.max(0.23, h)
-      const edges: [number, number][] = [[baseX, baseY], [x, baseY], [baseX + width, baseY], [baseX, baseY + depth], [x, baseY + depth], [baseX + width, baseY + depth]]
-      for (const [px, py] of edges) line([px, py, 0.18], [px, py, level], style.steel, 2)
-      for (const z of [level, (level + 0.18) / 2]) {
-        line([baseX, baseY, z], [baseX + width, baseY, z], style.roof, 1.9)
-        line([baseX, baseY + depth, z], [baseX + width, baseY + depth, z], style.wall, 2.2)
-        for (const px of [baseX, x, baseX + width]) line([px, baseY, z], [px, baseY + depth, z], style.steel, 1.5)
-      }
-      line([x, baseY + depth, 0.20], [baseX + width, baseY + depth, level], style.steel, 1.35)
-    }
-
-    if (!finished) {
-      solid(x - 1.05, y + 0.89, 0.36, 0.17, 0.06, 0.13, ['#e2ad5d', '#bb8a44', '#936835'])
-      solid(x - 0.61, y + 0.88, 0.28, 0.16, 0.06, 0.08, ['#f4d6a0', '#d2aa69', '#b88b50'])
-      if (site.type !== 'house') crane(x - 1.23, y - 0.85, h, tile.seat)
-    }
+    ctx.globalAlpha = 1
   }
 }
