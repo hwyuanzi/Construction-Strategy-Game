@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowRight, Bot, Minus, Plus, Star, Users } from 'lucide-react'
-import { BUILDINGS, BUILDING_TYPES, DEFAULT_STARTING_BRICKS, MAX_PLAYERS, MAX_SITES, MAX_STARTING_BRICKS, MIN_PLAYERS } from '../game/engine'
+import { BRICK_BUDGET, BUILDINGS, BUILDING_TYPES, DEFAULT_STARTING_BRICKS, MAX_PLAYERS, MAX_SITES, MAX_STARTING_BRICKS, MIN_PLAYERS, TURN_LIMIT } from '../game/engine'
 import type { Building } from '../game/engine'
 import { DIFFICULTIES, DIFFICULTY_NAMES } from '../game/planner'
 import type { Difficulty } from '../game/planner'
@@ -11,6 +11,7 @@ export interface GameSetup {
   mode: 'computer' | 'friends'
   difficulty: Difficulty
   players: number
+  firstPlayer: 0 | 1
   firstTrucks: readonly number[]
   buildings: Record<Building, number>
 }
@@ -19,6 +20,7 @@ export const DEFAULT_SETUP: GameSetup = {
   mode: 'computer',
   difficulty: 'normal',
   players: 2,
+  firstPlayer: 0,
   firstTrucks: Array.from({ length: MAX_PLAYERS }, () => DEFAULT_STARTING_BRICKS),
   buildings: { house: 1, library: 0, commercial: 1, apartment: 0, skyscraper: 1 },
 }
@@ -35,7 +37,7 @@ export function playerName(setup: GameSetup, player: number) {
 const difficultyHelp = {
   easy: 'Grabs the most stars it can win now.',
   normal: 'Plans a move, your reply, and its next move.',
-  hard: 'Searches up to ten turns ahead.',
+  hard: 'Searches up to twelve moves.',
 }
 
 export function Setup({ initial, start, close }: {
@@ -70,14 +72,20 @@ export function Setup({ initial, start, close }: {
             </button>
           </div>
         </fieldset>
-        {draft.mode === 'computer' ? <fieldset>
+        {draft.mode === 'computer' ? <><fieldset>
           <legend>Computer difficulty</legend>
           <div className="segment">
             {DIFFICULTIES.map(difficulty => <button type="button" key={difficulty} aria-pressed={draft.difficulty === difficulty}
               onClick={() => setDraft({ ...draft, difficulty })}>{DIFFICULTY_NAMES[difficulty]}</button>)}
           </div>
           <p className="field-note">{difficultyHelp[draft.difficulty]}</p>
-        </fieldset> : <fieldset>
+        </fieldset><fieldset>
+          <legend>Who starts?</legend>
+          <div className="segment">
+            <button type="button" aria-pressed={draft.firstPlayer === 0} onClick={() => setDraft({ ...draft, firstPlayer: 0 })}>You</button>
+            <button type="button" aria-pressed={draft.firstPlayer === 1} onClick={() => setDraft({ ...draft, firstPlayer: 1 })}>Computer</button>
+          </div>
+        </fieldset></> : <fieldset>
           <legend>Number of players</legend>
           <div className="segment">
             {Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => index + MIN_PLAYERS).map(players =>
@@ -88,14 +96,14 @@ export function Setup({ initial, start, close }: {
           <p className="field-note">Take turns on this device.</p>
         </fieldset>}
         <fieldset>
-          <legend>First truck</legend>
-          <p className="field-note first-truck-note">Bricks each player gets on their first turn.</p>
+          <legend>First-turn limits</legend>
+          <p className="field-note opening-limit-note">Each player has {BRICK_BUDGET} bricks for the game. Later turns have a limit of {TURN_LIMIT}.</p>
           <div className="load-options">
             {Array.from({ length: count }, (_, index) => {
               const name = playerName(draft, index)
               return <label key={index} className={`load-option player-${index}`}>
                 <span><i className="player-dot" /> {name}</span>
-                <select aria-label={`Starting bricks for ${name}`} value={draft.firstTrucks[index]} onChange={event => {
+                <select aria-label={`First-turn limit for ${name}`} value={draft.firstTrucks[index]} onChange={event => {
                   const bricks = Number(event.target.value)
                   setDraft(current => ({ ...current, firstTrucks: current.firstTrucks.map((value, player) => player === index ? bricks : value) }))
                 }}>

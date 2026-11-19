@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Navigation, Star } from 'lucide-react'
-import { BUILDINGS, bricksLeft } from '../game/engine'
+import { BUILDINGS, bricksLeft, turnsUntilOpen } from '../game/engine'
 import type { Match } from '../game/engine'
 import { BUILD_DURATION, BUILDING_COLORS, paintTown, plots, projectPoint, TOWN_HEIGHT, TOWN_WIDTH } from './town'
 
@@ -31,7 +31,7 @@ export function City({ match, disabled, focused, focus, build }: {
     element.height = TOWN_HEIGHT * ratio
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
 
-    let time = latest && !reduced ? 0 : 1
+    let time = latest && latest.site !== null && !reduced ? 0 : 1
     let frame = 0
     const start = performance.now()
     const draw = () => paintTown(context, match, time, focusRef.current)
@@ -64,15 +64,17 @@ export function City({ match, disabled, focused, focus, build }: {
         const kind = match.sites[site]
         const project = BUILDINGS[kind]
         const remaining = bricksLeft(match, site)
+        const reopening = turnsUntilOpen(match, site)
         const position = {
           left: (left / TOWN_WIDTH * 100) + '%',
           top: (top / TOWN_HEIGHT * 100) + '%',
           '--lot-layer': depthOrder.indexOf(site) + 1,
         } as CSSProperties
         return <div key={site} className="map-lot" style={position}>
-          <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}`}
-            disabled={disabled} style={{ color: BUILDING_COLORS[kind] }}
+          <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}${reopening ? ' map-closed' : ''}`}
+            disabled={disabled || reopening > 0} style={{ color: BUILDING_COLORS[kind] }}
             aria-label={`Map site ${site + 1}, ${project.name}, ${remaining} ${remaining === 1 ? 'brick' : 'bricks'} left, ${project.stars} stars`}
+            aria-description={reopening ? `Reopens in ${reopening} ${reopening === 1 ? 'turn' : 'turns'}` : undefined}
             onPointerEnter={() => focus(site)} onPointerLeave={() => focus()} onFocus={() => focus(site)} onBlur={() => focus()}
             onClick={() => build(site)}>
             <span>{site + 1}</span>

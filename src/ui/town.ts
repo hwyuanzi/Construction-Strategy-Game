@@ -1,5 +1,5 @@
 import { BUILDINGS } from '../game/engine'
-import type { Building, Match, Move } from '../game/engine'
+import type { Building, BuildMove, Match } from '../game/engine'
 
 export const TOWN_WIDTH = 960
 export const TOWN_HEIGHT = 550
@@ -198,7 +198,7 @@ export function paintThumbnail(ctx: CanvasRenderingContext2D, kind: Building) {
   building(paint, kind, 0, 0, BUILDINGS[kind].bricks)
 }
 
-export function animationLevel(move: Move, time: number) {
+export function animationLevel(move: BuildMove, time: number) {
   const rise = Math.min(1, time / .58)
   const settle = move.stars ? Math.max(0, (time - .78) / .22) : 0
   return (move.before + move.bricks * (1 - (1 - rise) ** 3)) * (1 - settle ** 2)
@@ -300,7 +300,7 @@ export function paintTown(ctx: CanvasRenderingContext2D, match: Match, time = 1,
     }
   }
 
-  if (recent?.stars && time > .42) {
+  if (recent && recent.site !== null && recent.stars && time > .42) {
     const [x, y] = lots[recent.site]
     const [px, py] = projectPoint(x, y, heights[match.sites[recent.site]] + .52)
     const burst = (time - .42) / .58

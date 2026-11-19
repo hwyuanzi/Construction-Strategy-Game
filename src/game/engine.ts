@@ -15,20 +15,30 @@ export const MAX_PLAYERS = 6
 export const MAX_SITES = 12
 export const MAX_STARTING_BRICKS = 7
 export const DEFAULT_STARTING_BRICKS = 2
+export const TURN_LIMIT = 3
+export const BRICK_BUDGET = 12
+export const ROUNDS = 6
 
-const LATER_LOADS = [3, 3, 2, 2, 1] as const
-export const ROUNDS = LATER_LOADS.length + 1
+const LATER_LOADS = Array.from({ length: ROUNDS - 1 }, () => TURN_LIMIT)
 
 export interface BuildAction {
   site: number
   bricks: number
 }
 
-export interface Move extends BuildAction {
+interface PassAction {
+  site: null
+  bricks: 0
+}
+
+export const SKIP_TURN: PassAction = { site: null, bricks: 0 }
+export type TurnAction = BuildAction | PassAction
+export interface BuildMove extends BuildAction {
   player: number
   before: number
   stars: number
 }
+export type Move = BuildMove | (PassAction & { player: number; stars: 0 })
 
 interface MatchOptions {
   sites?: readonly Building[]
@@ -43,6 +53,8 @@ export interface Match {
   startingBricks: readonly number[]
   laterLoads: readonly number[]
   progress: readonly number[]
+  reopensAt: readonly number[]
+  reserves: readonly number[]
   scores: readonly number[]
   moves: readonly Move[]
 }
@@ -56,29 +68,32 @@ export function createMatch({
   const validLoad = (load: number) => Number.isInteger(load) && load >= 1 && load <= MAX_STARTING_BRICKS
   if (startingBricks.length < MIN_PLAYERS || startingBricks.length > MAX_PLAYERS || !startingBricks.every(validLoad) ||
     !Number.isInteger(firstPlayer) || firstPlayer < 0 || firstPlayer >= startingBricks.length) {
-    throw new Error('Choose two to six players with valid starting trucks.')
+    throw new Error('Choose two to six players with valid opening limits.')
   }
   if (!sites.length || sites.length > MAX_SITES || !sites.every(site => Object.hasOwn(BUILDINGS, site))) {
     throw new Error('Choose one to twelve building sites.')
   }
-  if (!laterLoads.every(validLoad)) throw new Error('Truck loads must contain whole bricks.')
+  if (!laterLoads.every(validLoad)) throw new Error('Turn limits must be whole numbers of bricks.')
   return {
     sites: [...sites],
     firstPlayer,
     startingBricks: [...startingBricks],
     laterLoads: [...laterLoads],
     progress: sites.map(site => BUILDINGS[site].foundation),
+    reopensAt: sites.map(() => 0),
+    reserves: startingBricks.map(() => BRICK_BUDGET),
     scores: startingBricks.map(() => 0),
     moves: [],
   }
 }
 
-export function deliveryAt(match: Match, turn: number) {
+export function deliveryAt(match: Match, turn: number, reserves = match.reserves) {
   const count = match.startingBricks.length
   const round = Math.floor(turn / count)
   if (round > match.laterLoads.length) return
   const player = (match.firstPlayer + turn) % count
-  return { player, round: round + 1, bricks: round === 0 ? match.startingBricks[player] : match.laterLoads[round - 1] }
+  const limit = round === 0 ? match.startingBricks[player] : match.laterLoads[round - 1]
+  return { player, round: round + 1, bricks: Math.min(limit, reserves[player]) }
 }
 
 export function delivery(match: Match, ahead = 0) {
@@ -89,10 +104,23 @@ export function bricksLeft(match: Match, site: number) {
   return BUILDINGS[match.sites[site]].bricks - match.progress[site]
 }
 
-export function playMove(match: Match, { site, bricks: requested }: BuildAction): Match {
+export function turnsUntilOpen(match: Match, site: number) {
+  return Math.max(0, match.reopensAt[site] - match.moves.length)
+}
+
+export function reopeningTurn(match: Match, completionTurn: number) {
+  return completionTurn + match.scores.length + 1
+}
+
+export function playMove(match: Match, { site, bricks: requested }: TurnAction): Match {
   const load = delivery(match)
-  if (!load || !Number.isInteger(site) || site < 0 || site >= match.sites.length ||
-    !Number.isInteger(requested) || requested < 1 || requested > load.bricks) return match
+  if (!load) return match
+  if (site === null) {
+    if (requested !== 0) return match
+    return { ...match, moves: [...match.moves, { ...SKIP_TURN, player: load.player, stars: 0 }] }
+  }
+  if (!Number.isInteger(site) || site < 0 || site >= match.sites.length ||
+    !Number.isInteger(requested) || requested < 1 || requested > load.bricks || turnsUntilOpen(match, site)) return match
 
   const project = BUILDINGS[match.sites[site]]
   const before = match.progress[site]
@@ -100,12 +128,16 @@ export function playMove(match: Match, { site, bricks: requested }: BuildAction)
   const bricks = Math.min(requested, remaining)
   const stars = bricks === remaining ? project.stars : 0
   const progress = [...match.progress]
+  const reopensAt = [...match.reopensAt]
   const scores = [...match.scores]
+  const reserves = [...match.reserves]
   progress[site] = stars ? 0 : before + bricks
+  if (stars) reopensAt[site] = reopeningTurn(match, match.moves.length)
   scores[load.player] += stars
+  reserves[load.player] -= bricks
 
   return {
-    ...match, progress, scores,
+    ...match, progress, reopensAt, scores, reserves,
     moves: [...match.moves, { player: load.player, site, before, bricks, stars }],
   }
 }
