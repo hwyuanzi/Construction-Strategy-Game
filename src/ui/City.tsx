@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Navigation, Star } from 'lucide-react'
-import { BUILDINGS, bricksLeft, turnsUntilOpen } from '../game/engine'
+import { BUILDINGS, bricksLeft, isCopyCoolingDown, turnsUntilOpen } from '../game/engine'
 import type { Match } from '../game/engine'
 import { BUILD_DURATION, BUILDING_COLORS, paintTown, plots, projectPoint, TOWN_HEIGHT, TOWN_WIDTH } from './town'
 
@@ -65,16 +65,17 @@ export function City({ match, disabled, focused, focus, build }: {
         const project = BUILDINGS[kind]
         const remaining = bricksLeft(match, site)
         const reopening = turnsUntilOpen(match, site)
+        const closed = reopening > 0 || isCopyCoolingDown(match, site)
         const position = {
           left: (left / TOWN_WIDTH * 100) + '%',
           top: (top / TOWN_HEIGHT * 100) + '%',
           '--lot-layer': depthOrder.indexOf(site) + 1,
         } as CSSProperties
         return <div key={site} className="map-lot" style={position}>
-          <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}${reopening ? ' map-closed' : ''}`}
-            disabled={disabled || reopening > 0} style={{ color: BUILDING_COLORS[kind] }}
+          <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}${closed ? ' map-closed' : ''}`}
+            disabled={disabled || closed} style={{ color: BUILDING_COLORS[kind] }}
             aria-label={`Map site ${site + 1}, ${project.name}, ${remaining} ${remaining === 1 ? 'brick' : 'bricks'} left, ${project.stars} stars`}
-            aria-description={reopening ? `Reopens in ${reopening} ${reopening === 1 ? 'turn' : 'turns'}` : undefined}
+            aria-description={reopening ? `Reopens in ${reopening} ${reopening === 1 ? 'turn' : 'turns'}` : closed ? 'Cooldown for 1 turn' : undefined}
             onPointerEnter={() => focus(site)} onPointerLeave={() => focus()} onFocus={() => focus(site)} onBlur={() => focus()}
             onClick={() => build(site)}>
             <span>{site + 1}</span>

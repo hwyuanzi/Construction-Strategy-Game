@@ -90,11 +90,19 @@ button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px
 .skip-turn { min-height: 36px; margin-left: auto; padding-block: 4px; border-color: var(--line); color: var(--ink); background: var(--paper); }
 .skip-turn:hover:not(:disabled) { border-color: var(--player); color: var(--player); }
 .skip-turn:disabled { opacity: .6; }
+.bonus-cards { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.bonus-card { display: flex; align-items: center; gap: 7px; min-height: 43px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); text-align: left; }
+.bonus-card svg { flex: none; color: var(--player); }
+.bonus-card span { display: grid; font-size: 12px; line-height: 1.25; }
+.bonus-card small { color: var(--muted); font-size: 10px; }
+.bonus-card:hover:not(:disabled), .bonus-card[aria-pressed=true] { border-color: var(--player); }
+.bonus-card[aria-pressed=true] { box-shadow: inset 0 -2px var(--player); }
+.bonus-card:disabled { opacity: .6; }
 @container (min-width: 800px) {
-  .truck-banner { grid-template-columns: auto minmax(0, 1fr) auto auto; }
-  .truck-actions { grid-column: 3; grid-row: 1; padding-top: 0; border-top: 0; }
-  .truck-next { grid-column: 4; grid-row: 1; }
-  .skip-turn { margin-left: 7px; }
+  .truck-banner:not(.expanded-load) { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+  .truck-banner:not(.expanded-load) .truck-actions { grid-column: 3; grid-row: 1; padding-top: 0; border-top: 0; }
+  .truck-banner:not(.expanded-load) .truck-next { grid-column: 4; grid-row: 1; }
+  .truck-banner:not(.expanded-load) .skip-turn { margin-left: 7px; }
 }
 
 .city { overflow: hidden; border: 1px solid #a3b8a7; border-radius: 8px; background: #d9e6d7; }
@@ -230,6 +238,7 @@ button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px
   .truck-next > div { gap: 3px 5px; }
   .brick-options { gap: 4px; }
   .brick-options button { min-width: 32px; height: 34px; }
+  .bonus-card { gap: 5px; padding-inline: 5px; }
   .map-label, .compass { top: 6px; font-size: 10px; }
   .map-label { left: 7px; }
   .compass { right: 7px; }

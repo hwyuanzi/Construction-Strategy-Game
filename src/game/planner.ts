@@ -1,4 +1,4 @@
-import { BRICK_BUDGET, BUILDINGS, delivery, deliveryAt, reopeningTurn, SKIP_TURN } from './engine'
+import { BRICK_BUDGET, BUILDINGS, buildLimit, bricksLeft, delivery, isCopyCoolingDown, isSiteOpen, maxBuildLimit, playMove, SKIP_TURN, turnsUntilOpen } from './engine'
 import type { BuildAction, Match, TurnAction } from './engine'
 
 export const DIFFICULTIES = ['easy', 'normal', 'hard'] as const
@@ -8,30 +8,41 @@ export const DIFFICULTY_NAMES: Record<Difficulty, string> = {
   easy: 'Easy', normal: 'Normal', hard: 'Hard',
 }
 
-interface BuildCandidate extends BuildAction {
+interface BuildCandidate {
+  action: BuildAction
   reward: number
   stars: number
   left: number
 }
 
-const PASS = { ...SKIP_TURN, reward: 0 }
-type Candidate = BuildCandidate | typeof PASS
-
-function candidates(match: Match, progress: readonly number[], reopensAt: readonly number[], turn: number, bricks: number): Candidate[] {
+function candidates(match: Match, load: NonNullable<ReturnType<typeof delivery>>): TurnAction[] {
   const seen = new Set<string>()
-  const builds = match.sites.flatMap((kind, site) => {
-    if (reopensAt[site] > turn) return []
-    const project = BUILDINGS[kind]
-    const left = project.bricks - progress[site]
+  const builds: BuildCandidate[] = []
+  const base = load.bricks
+  const cards = match.cards[load.player]
+  for (const [site, kind] of match.sites.entries()) {
+    if (!isSiteOpen(match, site)) continue
+    const left = bricksLeft(match, site)
     const key = kind + left
-    if (seen.has(key)) return []
+    if (seen.has(key)) continue
     seen.add(key)
-    return Array.from({ length: Math.min(left, bricks) }, (_, index) => {
-      const amount = index + 1
-      return { site, bricks: amount, left, stars: project.stars, reward: left === amount ? project.stars : 0 }
-    })
-  }).sort((a, b) => b.reward - a.reward || b.stars - a.stars || a.left - b.left || b.bricks - a.bricks)
-  return [...builds, PASS]
+    const stars = BUILDINGS[kind].stars
+
+    for (const card of [undefined, ...cards]) {
+      const limit = Math.min(left, buildLimit(match, load, card))
+      const first = card === 'doubleLoad' ? base + 1 : 1
+      for (let bricks = first; bricks <= limit; bricks++) {
+        const action = card ? { site, bricks, card } : { site, bricks }
+        builds.push({ action, left, stars, reward: left === bricks ? stars : 0 })
+      }
+    }
+  }
+
+  builds.sort((a, b) => b.reward - a.reward || Number(Boolean(a.action.card)) - Number(Boolean(b.action.card)) ||
+    b.stars - a.stars || a.left - b.left || b.action.bricks - a.action.bricks)
+  const actions: TurnAction[] = builds.map(({ action }) => action)
+  if (actions.length === 0 || match.skips[load.player] > 0) actions.push(SKIP_TURN)
+  return actions
 }
 
 const NORMAL_DEPTH = 3
@@ -50,47 +61,48 @@ interface Entry {
   bound: 'exact' | 'lower' | 'upper'
 }
 
+function opportunity(match: Match, bricks: number, ahead = 0) {
+  if (bricks === 0) return 0
+  let best = 0
+  for (const [site, kind] of match.sites.entries()) {
+    if (!isSiteOpen(match, site, ahead)) continue
+    best = Math.max(best, BUILDINGS[kind].stars / (1 + Math.max(0, bricksLeft(match, site) - bricks)))
+  }
+  return best
+}
+
 export function searchMove(match: Match, difficulty: Exclude<Difficulty, 'easy'>): SearchResult | undefined {
   if (match.startingBricks.length !== 2) return
   const load = delivery(match)
   if (!load) return
 
-  const firstTurn = match.moves.length
-  const remaining = (match.laterLoads.length + 1) * match.startingBricks.length - firstTurn
+  const remaining = (match.laterLoads.length + 1) * match.startingBricks.length - match.moves.length
   const depthLimit = Math.min(difficulty === 'normal' ? NORMAL_DEPTH : HARD_DEPTH, remaining)
-  const progress = [...match.progress]
-  const reopensAt = [...match.reopensAt]
-  const reserves = [...match.reserves]
-  const options = candidates(match, progress, reopensAt, firstTurn, load.bricks)
+  const options = candidates(match, load)
   const cache = new Map<string, Entry>()
   let nodes = 0
 
-  function opportunity(turn: number, bricks: number) {
-    if (bricks === 0) return 0
-    let best = 0
-    for (const [site, kind] of match.sites.entries()) {
-      if (reopensAt[site] > turn) continue
-      const project = BUILDINGS[kind]
-      const left = project.bricks - progress[site]
-      best = Math.max(best, project.stars / (1 + Math.max(0, left - bricks)))
-    }
-    return best
-  }
-
-  function search(turn: number, depth: number, alpha: number, beta: number): number {
+  function search(position: Match, depth: number, alpha: number, beta: number): number {
     if (nodes >= HARD_NODE_LIMIT) throw LIMIT_REACHED
     nodes++
-    const next = deliveryAt(match, turn, reserves)
+    const next = delivery(position)
     if (!next) return 0
     if (depth === 0) {
-      const reply = deliveryAt(match, turn + 1, reserves)
-      const reserveEdge = reserves[next.player] - (reply ? reserves[reply.player] : 0)
-      // Use threats and inventory to rank positions with the same star margin.
-      return opportunity(turn, next.bricks) / 16 - opportunity(turn + 1, reply?.bricks ?? 0) / 32 + reserveEdge / (8 * BRICK_BUDGET)
+      const rival = 1 - next.player
+      const reply = delivery(position, 1)
+      const reserveEdge = position.reserves[next.player] - position.reserves[rival]
+      const cardEdge = position.cards[next.player].length - position.cards[rival].length
+      const skipEdge = position.skips[next.player] - position.skips[rival]
+      return opportunity(position, maxBuildLimit(position, next)) / 16 -
+        opportunity(position, maxBuildLimit(position, reply), 1) / 32 +
+        reserveEdge / (8 * BRICK_BUDGET) + cardEdge / 16 + skipEdge / 64
     }
 
-    const closed = reopensAt.map(open => Math.max(0, open - turn)).join('')
-    const key = `${turn}:${depth}:${reserves.join(',')}:${progress.join('')}:${closed}`
+    const closed = position.sites.map((_, site) =>
+      `${turnsUntilOpen(position, site)}${isCopyCoolingDown(position, site) ? 'c' : ''}`).join(',')
+    const hands = position.cards.map(hand => hand.map(card => card === 'doubleLoad' ? 'D' : 'C').join('')).join('/')
+    const key = [position.moves.length, depth, position.reserves, position.progress, closed,
+      position.skips, hands].join(':')
     const stored = cache.get(key)
     if (stored?.bound === 'exact') return stored.value
     if (stored?.bound === 'lower') alpha = Math.max(alpha, stored.value)
@@ -99,8 +111,8 @@ export function searchMove(match: Match, difficulty: Exclude<Difficulty, 'easy'>
     const lower = alpha
     const upper = beta
     let value = -Infinity
-    for (const candidate of candidates(match, progress, reopensAt, turn, next.bricks)) {
-      value = Math.max(value, evaluateMove(candidate, next.player, turn, depth, alpha, beta))
+    for (const action of candidates(position, next)) {
+      value = Math.max(value, evaluateMove(position, action, depth, alpha, beta))
       alpha = Math.max(alpha, value)
       if (alpha >= beta) break
     }
@@ -109,27 +121,15 @@ export function searchMove(match: Match, difficulty: Exclude<Difficulty, 'easy'>
     return value
   }
 
-  // The only AI matches are one-on-one. A gain for one builder is a
-  // loss for the other, so each reply flips the sign of the score.
-  function evaluateMove(candidate: Candidate, player: number, turn: number, depth: number, alpha: number, beta: number) {
-    const { site, bricks, reward } = candidate
-    if (site === null) return -search(turn + 1, depth - 1, -beta, -alpha)
-    const before = progress[site]
-    const previousReopening = reopensAt[site]
-    progress[site] = reward ? 0 : before + bricks
-    if (reward) reopensAt[site] = reopeningTurn(match, turn)
-    reserves[player] -= bricks
-    try {
-      return reward - search(turn + 1, depth - 1, reward - beta, reward - alpha)
-    } finally {
-      progress[site] = before
-      reopensAt[site] = previousReopening
-      reserves[player] += bricks
-    }
+  // The only AI matches are one-on-one. Each reply flips the sign of the score.
+  function evaluateMove(position: Match, action: TurnAction, depth: number, alpha: number, beta: number) {
+    const next = playMove(position, action)
+    const reward = next.moves.at(-1)!.stars
+    return reward - search(next, depth - 1, reward - beta, reward - alpha)
   }
 
   let best = options[0]
-  if (options.length === 1) return { action: SKIP_TURN, depth: 0, nodes: 0 }
+  if (options.length === 1) return { action: best, depth: 0, nodes: 0 }
   let depthReached = 0
   const firstDepth = Math.min(NORMAL_DEPTH, depthLimit)
   try {
@@ -138,11 +138,11 @@ export function searchMove(match: Match, difficulty: Exclude<Difficulty, 'easy'>
       // Use the previous iteration's best move to tighten the first bound.
       const ordered = [best, ...options.filter(option => option !== best)]
       let winner = best
-      for (const candidate of ordered) {
-        const value = evaluateMove(candidate, load.player, firstTurn, depth, bestScore, Infinity)
+      for (const action of ordered) {
+        const value = evaluateMove(match, action, depth, bestScore, Infinity)
         if (value > bestScore) {
           bestScore = value
-          winner = candidate
+          winner = action
         }
       }
       best = winner
@@ -151,13 +151,11 @@ export function searchMove(match: Match, difficulty: Exclude<Difficulty, 'easy'>
   } catch (error) {
     if (error !== LIMIT_REACHED) throw error
   }
-  return { action: best.site === null ? SKIP_TURN : { site: best.site, bricks: best.bricks }, depth: depthReached, nodes }
+  return { action: best, depth: depthReached, nodes }
 }
 
 export function chooseMove(match: Match, difficulty: Difficulty): TurnAction | undefined {
   if (difficulty !== 'easy') return searchMove(match, difficulty)?.action
   const load = delivery(match)
-  if (!load) return
-  const { site, bricks } = candidates(match, match.progress, match.reopensAt, match.moves.length, load.bricks)[0]
-  return site === null ? SKIP_TURN : { site, bricks }
+  if (load) return candidates(match, load)[0]
 }
