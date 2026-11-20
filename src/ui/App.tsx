@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CircleHelp, Construction, Lightbulb, Plus, ShoppingCart, SkipForward, Star, Trophy, Truck } from 'lucide-react'
+import { ArrowRight, Bot, Check, CircleHelp, Clock3, Construction, History, Layers3, Lightbulb, Plus, ShoppingCart, SkipForward, Star, Ticket, Trophy, Truck } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { BONUS_CARDS, BRICK_BUDGET, BUILDINGS, BUILDING_TYPES, buildLimit, bricksLeft, canPlaceBricks, CARD_TYPES, createMatch, delivery, isCopyCoolingDown, isSiteOpen, maxBuildLimit, playMove, ROUNDS, SKIP_LIMIT, SKIP_TURN, TURN_LIMIT, turnsUntilOpen } from '../game/engine'
 import type { BonusCard, Match, Move, TurnAction } from '../game/engine'
@@ -16,11 +16,11 @@ function Stars({ count }: { count: number }) {
 function Help({ close }: { close: () => void }) {
   return <Dialog title="How to play" onClose={close}>
     <ol className="rules">
-      <li>Each player starts with {BRICK_BUDGET} bricks for the game. After the opening round, you can spend up to {TURN_LIMIT} per turn.</li>
-      <li>Choose an amount and pick one site. Each player can skip {SKIP_LIMIT} times. If you have no legal build, passing is free.</li>
-      <li>After you place bricks, other sites of the same type cool down for one turn. The next player can still build on your site if it’s unfinished.</li>
-      <li>Each player gets one Double Load and one Brick Cart. Double Load doubles the turn limit using your supply. Brick Cart supplies the first two bricks for free. Choose up to one card per build.</li>
-      <li>Place the last brick to win the building’s stars. The site reopens after everyone takes one more turn. Most stars after {ROUNDS} rounds wins.</li>
+      <li><strong>Manage your bricks</strong><p>Each player starts with {BRICK_BUDGET} bricks for the game. After the opening round, you can spend up to {TURN_LIMIT} per turn.</p></li>
+      <li><strong>Choose bricks, then a site</strong><p>Choose an amount and pick one site. Each player can skip {SKIP_LIMIT} times. If you have no legal build, passing is free.</p></li>
+      <li><strong>Watch matching sites</strong><p>Other sites of the same type cool down for one turn after you build. The next player can still build on your site if it’s unfinished.</p></li>
+      <li><strong>Play a bonus card</strong><p>You get one Double Load and one Brick Cart. Double Load doubles the turn limit using your supply. Brick Cart supplies the first two bricks for free. Choose up to one card per build.</p></li>
+      <li><strong>Finish buildings to score</strong><p>Place the last brick to win the building’s stars. The site reopens after everyone takes one more turn. Most stars after {ROUNDS} rounds wins.</p></li>
     </ol>
     <button type="button" className="button primary" onClick={close}>Let’s build <ArrowRight size={16} /></button>
   </Dialog>
@@ -62,14 +62,16 @@ function SiteList({ match, amount, disabled, focused, focus, build }: {
           </span>
         </span>
         <span className="site-value"><Stars count={project.stars} />
-          {preview && <span className={`finish-flag${exposesFinish ? ' risk-flag' : ''}${reopening || onCooldown ? ' reopening-flag' : ''}`}>{preview}</span>}
+          {preview && <span className={`finish-flag${exposesFinish ? ' risk-flag' : ''}${reopening || onCooldown ? ' reopening-flag' : ''}`}>
+            {canFinish && <Check size={12} aria-hidden="true" />}{(reopening > 0 || onCooldown) && <Clock3 size={11} aria-hidden="true" />}{preview}
+          </span>}
         </span>
       </button>
     })}
   </div>
 }
 
-function TruckBanner({ match, setup, amount, card, disabled, sitesOpen, chooseAmount, chooseCard, skip }: {
+function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseAmount, chooseCard, skip }: {
   match: Match
   setup: GameSetup
   amount: number
@@ -90,19 +92,17 @@ function TruckBanner({ match, setup, amount, card, disabled, sitesOpen, chooseAm
   const unavailable = !sitesOpen ? (match.sites.some((_, site) => isCopyCoolingDown(match, site)) ? 'No sites available this turn' : 'All sites are reopening')
     : (forced ? 'Out of bricks' : 'Use Brick Cart to build')
 
-  return <div className={`truck-banner player-${load.player}${limit > 7 ? ' expanded-load' : ''}`}>
-    <div className="truck-icon"><Truck size={26} aria-hidden="true" /></div>
-    <div className="truck-current" aria-live="polite">
-      <strong>{turn}</strong>
-      <span>{sitesOpen && limit > 0 ? `Up to ${limit} ${limit === 1 ? 'brick' : 'bricks'} this turn` : unavailable}</span>
-    </div>
-    {upcoming.length > 0 && <div className="truck-next" aria-label="Upcoming turn limits">
-      <small>Upcoming base limits</small>
-      <div>{upcoming.map((item, index) => <span key={index}>{playerName(setup, item.player)} <b>{item.bricks}</b></span>)}</div>
-    </div>}
-    <div className="truck-actions">
-      {limit > 0 && sitesOpen && <div className="brick-picker" role="group" aria-label="Bricks to place">
-        <span>Choose bricks</span>
+  return <section className={`turn-card player-${load.player}`} aria-labelledby="turn-title">
+    <header className="turn-header">
+      <div className="truck-icon">{disabled ? <Bot size={23} aria-hidden="true" /> : <Truck size={23} aria-hidden="true" />}</div>
+      <div className="truck-current" aria-live="polite">
+        <h2 id="turn-title">{turn}</h2>
+        <p>{disabled ? 'Choosing a move…' : sitesOpen && limit > 0 ? `Up to ${limit} ${limit === 1 ? 'brick' : 'bricks'} this turn` : unavailable}</p>
+      </div>
+    </header>
+    {sitesOpen && (!forced || limit > 0) && <div className="turn-options">
+      {limit > 0 && <div className="brick-picker" role="group" aria-label="Bricks to place">
+        <h3 className="step-title"><span className="step-number">1</span> Choose bricks</h3>
         <div className="brick-options">
           {Array.from({ length: limit }, (_, index) => {
             const count = index + 1
@@ -112,37 +112,53 @@ function TruckBanner({ match, setup, amount, card, disabled, sitesOpen, chooseAm
           })}
         </div>
       </div>}
-      <button type="button" className="button skip-turn" disabled={disabled || (!forced && match.skips[load.player] === 0)} onClick={skip}>
+      <div className="bonus-tools">
+        <h3>Bonus cards {load.bricks > 0 && <span>Optional</span>}</h3>
+        <div className="bonus-cards" role="group" aria-label="Bonus cards">
+          {CARD_TYPES.map(kind => {
+            const used = !match.cards[load.player].includes(kind)
+            const bonus = BONUS_CARDS[kind]
+            const Icon = kind === 'doubleLoad' ? Truck : ShoppingCart
+            return <button key={kind} type="button" className="bonus-card"
+              disabled={disabled || used || buildLimit(match, load, kind) <= load.bricks}
+              aria-pressed={card === kind} onClick={() => chooseCard(kind)}>
+              <span className="card-icon"><Icon size={16} aria-hidden="true" /></span>
+              <span><strong>{bonus.name}</strong><small>{used ? 'Used' : bonus.description}</small></span>
+              {card === kind && <Check className="card-check" size={12} aria-hidden="true" />}
+            </button>
+          })}
+        </div>
+      </div>
+    </div>}
+    <footer className="turn-footer">
+      {upcoming.length > 0 && <div className="truck-next" aria-label="Upcoming turn limits">
+        <small>Upcoming limits</small>
+        <div>{upcoming.map((item, index) => <span key={index}>{playerName(setup, item.player)} <b>{item.bricks}</b></span>)}</div>
+      </div>}
+      <button type="button" className={`button ${forced ? 'primary' : 'skip-turn'}`}
+        disabled={disabled || (!forced && match.skips[load.player] === 0)} onClick={skip}
+        aria-describedby="skip-description">
         <SkipForward size={15} aria-hidden="true" /> {forced ? 'Pass turn' : 'Skip turn'}
+        {!forced && <span className="skip-count" aria-hidden="true">{match.skips[load.player]} left</span>}
       </button>
-    </div>
-    <div className="bonus-cards" role="group" aria-label="Bonus cards">
-      {CARD_TYPES.map(kind => {
-        const used = !match.cards[load.player].includes(kind)
-        const bonus = BONUS_CARDS[kind]
-        const Icon = kind === 'doubleLoad' ? Truck : ShoppingCart
-        return <button key={kind} type="button" className="bonus-card"
-          disabled={disabled || used || !sitesOpen || buildLimit(match, load, kind) <= load.bricks}
-          aria-pressed={card === kind} onClick={() => chooseCard(kind)}>
-          <Icon size={17} aria-hidden="true" />
-          <span><strong>{bonus.name}</strong><small>{used ? 'Used' : bonus.description}</small></span>
-        </button>
-      })}
-    </div>
-  </div>
+      <span id="skip-description" className="sr-only">{forced ? 'Passing is free.' : `${match.skips[load.player]} skips left`}</span>
+    </footer>
+  </section>
 }
 
 function Scoreboard({ match, setup }: { match: Match; setup: GameSetup }) {
   const load = delivery(match)
   return <div className="scoreboard" aria-label="Stars earned">
     {match.scores.map((score, player) => <div key={player} className={`score player-${player}${load?.player === player ? ' active' : ''}`}>
-      <span className="player-dot" aria-hidden="true" />
-      <div className="score-name"><strong>{playerName(setup, player)}</strong>
-        {setup.mode === 'computer' && player === 1 && <small>{DIFFICULTY_NAMES[setup.difficulty]}</small>}
-        <small className="score-stock">{match.reserves[player]} / {BRICK_BUDGET} bricks</small>
-        <small className="score-stock">{match.skips[player]} {match.skips[player] === 1 ? 'skip' : 'skips'} · {match.cards[player].length} {match.cards[player].length === 1 ? 'card' : 'cards'}</small>
+      <div className="score-name"><span className="score-icon" aria-hidden="true">{setup.mode === 'computer' && player === 1 ? <Bot size={17} /> : <span className="player-dot" />}</span>
+        <strong>{playerName(setup, player)}</strong>
+        {setup.mode === 'computer' && player === 1 && <small className="difficulty-label">{DIFFICULTY_NAMES[setup.difficulty]}</small>}
       </div>
       <span className="score-value"><Stars count={score} /></span>
+      <div className="score-stock">
+        <span><Layers3 size={13} aria-hidden="true" /> {match.reserves[player]} / {BRICK_BUDGET} bricks</span>
+        <span><Ticket size={13} aria-hidden="true" /> <span>{match.skips[player]} {match.skips[player] === 1 ? 'skip' : 'skips'} · {match.cards[player].length} {match.cards[player].length === 1 ? 'card' : 'cards'}</span></span>
+      </div>
     </div>)}
   </div>
 }
@@ -213,7 +229,8 @@ export function App() {
   const round = load?.round ?? ROUNDS
   const amount = chosenBricks ?? 0
   const sitesOpen = match.sites.some((_, site) => isSiteOpen(match, site))
-  const canBuild = Boolean(load && !botTurn && sitesOpen && amount > 0)
+  const canChooseBricks = Boolean(load && !botTurn && sitesOpen && buildLimit(match, load, chosenCard) > 0)
+  const canBuild = canChooseBricks && amount > 0
 
   useEffect(() => {
     if (!botTurn || modal) return
@@ -287,39 +304,44 @@ export function App() {
   return <>
     <header className="main-header">
       <div className="shell header-inner">
-        <div className="brand"><Construction size={24} aria-hidden="true" /><strong>Construction Strategy Game</strong></div>
+        <div className="brand">
+          <span className="brand-mark"><Construction size={33} strokeWidth={1.75} aria-hidden="true" /></span>
+          <div><h1>Last Brick</h1><p>Place the last brick to claim the building’s stars.</p></div>
+        </div>
         <div className="header-actions">
-          <button type="button" className="header-help" aria-label="How to play" onClick={() => setModal('help')}><CircleHelp size={18} /> <span>How to play</span></button>
-          <button type="button" className="button button-outline" onClick={() => setModal('setup')}><Plus size={17} /> New game</button>
+          <button type="button" className="button header-help" aria-label="How to play" onClick={() => setModal('help')}><CircleHelp size={17} aria-hidden="true" /> <span>How to play</span></button>
+          <button type="button" className="button new-game" onClick={() => setModal('setup')}><Plus size={17} aria-hidden="true" /> New game</button>
         </div>
       </div>
     </header>
     <main className="shell">
-      <section className="game-heading" aria-labelledby="game-title">
-        <div><h1 id="game-title">Last Brick</h1><p>Place the last brick. Win the building’s stars.</p></div>
+      <section className="match-overview" aria-label="Match standings and round">
         <div className="round"><strong>Round {round} <span>of {ROUNDS}</span></strong>
           <div className="round-track" aria-hidden="true">{Array.from({ length: ROUNDS }, (_, index) =>
             <i key={index} className={index + 1 < round || !load ? 'settled' : index + 1 === round ? 'current' : ''} />,
           )}</div>
         </div>
+        <Scoreboard match={match} setup={setup} />
       </section>
-      <Scoreboard match={match} setup={setup} />
       <div className="game-layout">
+        {load ? <TurnControls match={match} setup={setup} amount={amount} card={chosenCard} disabled={botTurn} sitesOpen={sitesOpen}
+          chooseAmount={chooseBricks} chooseCard={toggleCard} skip={() => takeTurn(SKIP_TURN)} />
+          : <Results match={match} setup={setup} restart={() => start(setup, true)} />}
         <div className="world">
-          {load ? <TruckBanner match={match} setup={setup} amount={amount} card={chosenCard} disabled={botTurn} sitesOpen={sitesOpen}
-            chooseAmount={chooseBricks} chooseCard={toggleCard} skip={() => takeTurn(SKIP_TURN)} />
-            : <Results match={match} setup={setup} restart={() => start(setup, true)} />}
           <City match={match} disabled={!canBuild} focused={focused} focus={focus} build={build} />
-          <div className="activity" role="status" aria-label="Latest moves">
-            {match.moves.length > 0 && <ul>{match.moves.slice(-2).map((move, index) =>
-              <MoveNote key={match.moves.length - 2 + index} move={move} match={match} setup={setup} />,
-            )}</ul>}
-          </div>
+          <section className="activity" aria-labelledby="activity-title">
+            <h2 id="activity-title"><History size={16} aria-hidden="true" /> Recent moves</h2>
+            <div role="status">
+              {match.moves.length > 0 ? <ul>{match.moves.slice(-2).map((move, index, moves) =>
+                <MoveNote key={match.moves.length - moves.length + index} move={move} match={match} setup={setup} />,
+              )}</ul> : <p>No moves yet.</p>}
+            </div>
+          </section>
         </div>
-        <aside className="turn-panel" aria-labelledby="site-title">
-          <header><h2 id="site-title">{canBuild ? 'Pick a site' : 'Building sites'}</h2>
-            {load && !botTurn && (canBuild ? <p>Choose a building on the map or here.</p>
-              : buildLimit(match, load, chosenCard) > 0 && sitesOpen && <p>Choose how many bricks to place first.</p>)}
+        <aside className={`site-panel${canBuild ? ' ready' : ''}`} aria-labelledby="site-title">
+          <header>
+            <h2 id="site-title" className="step-title">{canChooseBricks && <span className="step-number">2</span>} {canChooseBricks ? 'Pick a site' : 'Building sites'}</h2>
+            {canChooseBricks && <p role="status">{canBuild ? `Place ${amount} ${amount === 1 ? 'brick' : 'bricks'} on the map or in the list.` : 'Choose a brick amount to unlock sites.'}</p>}
           </header>
           <SiteList match={match} amount={amount} disabled={!canBuild} focused={focused} focus={focus} build={build} />
           {load && <StrategyTips match={match} />}

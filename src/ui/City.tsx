@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Navigation, Star } from 'lucide-react'
+import { Map, Navigation, Star } from 'lucide-react'
 import { BUILDINGS, bricksLeft, isCopyCoolingDown, turnsUntilOpen } from '../game/engine'
 import type { Match } from '../game/engine'
 import { BUILD_DURATION, BUILDING_COLORS, paintTown, plots, projectPoint, TOWN_HEIGHT, TOWN_WIDTH } from './town'
@@ -54,10 +54,14 @@ export function City({ match, disabled, focused, focus, build }: {
     refresh.current?.()
   }, [focused])
 
-  return <section className="city" aria-label="City map">
+  return <section className="city" aria-labelledby="city-title">
+    <header className="city-header">
+      <h2 id="city-title"><Map size={19} aria-hidden="true" /> City map</h2>
+      {disabled ? <span>{match.sites.length} {match.sites.length === 1 ? 'site' : 'sites'}</span>
+        : <span className="map-prompt">Pick a numbered site</span>}
+    </header>
     <div className="city-scene">
       <canvas ref={canvas} width={TOWN_WIDTH} height={TOWN_HEIGHT} aria-hidden="true" />
-      <span className="map-label" aria-hidden="true">City map</span>
       <span className="compass" aria-hidden="true"><Navigation size={14} /> N</span>
       {lots.map(([x, y], site) => {
         const [left, top] = projectPoint(x, y + .31)
