@@ -3,6 +3,7 @@ import { ArrowRight, Bot, Check, CircleHelp, Clock3, Construction, History, Laye
 import { motion } from 'framer-motion'
 import { BONUS_CARDS, BRICK_BUDGET, BUILDINGS, BUILDING_TYPES, buildLimit, bricksLeft, canPlaceBricks, CARD_TYPES, createMatch, delivery, isCopyCoolingDown, isSiteOpen, maxBuildLimit, playMove, ROUNDS, SKIP_LIMIT, SKIP_TURN, TURN_LIMIT, turnsUntilOpen } from '../game/engine'
 import type { BonusCard, Match, Move, TurnAction } from '../game/engine'
+import HardWorker from '../game/bot.worker?worker&inline'
 import { chooseMove, DIFFICULTY_NAMES } from '../game/planner'
 import { City } from './City'
 import { Dialog } from './Dialog'
@@ -249,7 +250,7 @@ export function App() {
         return
       }
       try {
-        worker = new Worker(new URL('../game/bot.worker.ts', import.meta.url), { type: 'module' })
+        worker = new HardWorker()
         worker.onmessage = (event: MessageEvent<TurnAction | undefined>) => submit(event.data ?? chooseMove(match, 'normal'))
         worker.onerror = fallback
         fallbackTimer = window.setTimeout(fallback, 3500)

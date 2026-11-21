@@ -37,3 +37,5 @@ npx playwright install chromium
 npm run test:e2e
 npm run build
 ```
+
+Run `npm run build:drecco` to build the standalone Dr. Ecco version. Open `dist/drecco/iframe.html` directly in a browser to play it.
