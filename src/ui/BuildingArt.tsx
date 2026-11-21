@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Building } from '../game/engine'
-import { paintThumbnail } from './town'
+import { paintThumbnail } from './townBuildings'
 
 export function BuildingArt({ type }: { type: Building }) {
   const canvas = useRef<HTMLCanvasElement>(null)

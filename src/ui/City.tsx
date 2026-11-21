@@ -1,10 +1,127 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Map, Navigation, Star } from 'lucide-react'
+import { Map as MapIcon, Navigation, Star } from 'lucide-react'
 import { BUILDINGS, bricksLeft, isCopyCoolingDown, turnsUntilOpen } from '../game/engine'
 import type { Match } from '../game/engine'
-import { BUILD_DURATION, BUILDING_COLORS, paintTown, plots, projectPoint, TOWN_HEIGHT, TOWN_WIDTH } from './town'
+import { BUILD_DURATION, BUILDING_COLORS, completionTime, createTownRenderer, plots, TOWN_HEIGHT, TOWN_WIDTH, townProjection } from './town'
+import type { BuildAnimation } from './town'
+
+function TownCanvas({ match, focused, reduced }: { match: Match; focused?: number; reduced: boolean | null }) {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const background = useRef<HTMLCanvasElement>(null)
+  const [renderer, setRenderer] = useState<ReturnType<typeof createTownRenderer>>()
+  const focusRef = useRef(focused)
+  const refresh = useRef<() => void>(undefined)
+  const lastMatch = useRef(match)
+  const animationsRef = useRef(new Map<number, BuildAnimation>())
+
+  useEffect(() => {
+    const ground = canvas.current
+    const back = background.current
+    const context = ground?.getContext('2d')
+    const backContext = back?.getContext('2d', { alpha: false })
+    if (!ground || !back || !context || !backContext) return
+
+    const resize = () => {
+      const width = Math.round(Math.min(TOWN_WIDTH * 2, ground.clientWidth * devicePixelRatio))
+      if (!width || ground.width === width) return
+      const height = Math.round(width * TOWN_HEIGHT / TOWN_WIDTH)
+      ground.width = back.width = width
+      ground.height = back.height = height
+      context.setTransform(width / TOWN_WIDTH, 0, 0, height / TOWN_HEIGHT, 0, 0)
+      backContext.setTransform(context.getTransform())
+      setRenderer(createTownRenderer(context, backContext))
+    }
+
+    resize()
+    const observer = new ResizeObserver(resize)
+    observer.observe(ground)
+    window.addEventListener('resize', resize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', resize)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!renderer) return
+    renderer.drawEnvironment()
+    const element = background.current
+    if (reduced || !element) return
+
+    let visible = false
+    let frame = 0
+    let elapsed = 0
+    let lastTime = 0
+    function draw(now: number) {
+      if (now - lastTime >= 42) {
+        elapsed += (now - lastTime) / 1000
+        lastTime = now
+        renderer?.drawEnvironment(elapsed)
+      }
+      frame = requestAnimationFrame(draw)
+    }
+    function sync() {
+      cancelAnimationFrame(frame)
+      if (visible && !document.hidden) {
+        lastTime = performance.now()
+        frame = requestAnimationFrame(draw)
+      }
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting
+      sync()
+    })
+    observer.observe(element)
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [reduced, renderer])
+
+  useEffect(() => {
+    if (!renderer) return
+    const previous = lastMatch.current
+    const latest = match.moves.at(-1)
+    const animations = animationsRef.current
+    if (previous.sites !== match.sites || reduced) animations.clear()
+    else if (latest && latest.site !== null && match.moves.length > previous.moves.length) {
+      animations.set(latest.site, { move: latest, start: performance.now() })
+    }
+    lastMatch.current = match
+
+    let frame = 0
+    function draw(now: number) {
+      for (const [site, { start }] of animations) {
+        if (now >= start + BUILD_DURATION) animations.delete(site)
+      }
+      renderer?.drawTown(match, now, animations, focusRef.current)
+    }
+    function animate(now: number) {
+      draw(now)
+      if (animations.size) frame = requestAnimationFrame(animate)
+    }
+    refresh.current = () => draw(performance.now())
+    animate(performance.now())
+    return () => {
+      cancelAnimationFrame(frame)
+      refresh.current = undefined
+    }
+  }, [match, reduced, renderer])
+
+  useEffect(() => {
+    focusRef.current = focused
+    refresh.current?.()
+  }, [focused])
+
+  return <>
+    <canvas ref={background} width={1} height={1} aria-hidden="true" />
+    <canvas ref={canvas} width={1} height={1} aria-hidden="true" />
+  </>
+}
 
 export function City({ match, disabled, focused, focus, build }: {
   match: Match
@@ -13,58 +130,24 @@ export function City({ match, disabled, focused, focus, build }: {
   focus: (site?: number) => void
   build: (site: number) => void
 }) {
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const focusRef = useRef(focused)
-  const refresh = useRef<() => void>(undefined)
   const reduced = useReducedMotion()
-  const latest = match.moves.at(-1)
+  const recent = match.moves.slice(-2)
   const lots = plots(match.sites.length)
+  const projectSite = townProjection(match.sites, lots)
   const depthOrder = lots.map(([x, y], site) => ({ depth: x + y, site }))
     .sort((a, b) => a.depth - b.depth).map(({ site }) => site)
 
-  useEffect(() => {
-    const element = canvas.current
-    const context = element?.getContext('2d')
-    if (!element || !context) return
-    const ratio = Math.min(window.devicePixelRatio || 1, 2)
-    element.width = TOWN_WIDTH * ratio
-    element.height = TOWN_HEIGHT * ratio
-    context.setTransform(ratio, 0, 0, ratio, 0, 0)
-
-    let time = latest && latest.site !== null && !reduced ? 0 : 1
-    let frame = 0
-    const start = performance.now()
-    const draw = () => paintTown(context, match, time, focusRef.current)
-    const animate = (now: number) => {
-      time = Math.min(1, (now - start) / BUILD_DURATION)
-      draw()
-      if (time < 1) frame = requestAnimationFrame(animate)
-    }
-    refresh.current = draw
-    draw()
-    if (time < 1) frame = requestAnimationFrame(animate)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      refresh.current = undefined
-    }
-  }, [latest, match, reduced])
-
-  useEffect(() => {
-    focusRef.current = focused
-    refresh.current?.()
-  }, [focused])
-
   return <section className="city" aria-labelledby="city-title">
     <header className="city-header">
-      <h2 id="city-title"><Map size={19} aria-hidden="true" /> City map</h2>
+      <h2 id="city-title"><MapIcon size={19} aria-hidden="true" /> City map</h2>
       {disabled ? <span>{match.sites.length} {match.sites.length === 1 ? 'site' : 'sites'}</span>
         : <span className="map-prompt">Pick a numbered site</span>}
     </header>
     <div className="city-scene">
-      <canvas ref={canvas} width={TOWN_WIDTH} height={TOWN_HEIGHT} aria-hidden="true" />
+      <TownCanvas match={match} focused={focused} reduced={reduced} />
       <span className="compass" aria-hidden="true"><Navigation size={14} /> N</span>
       {lots.map(([x, y], site) => {
-        const [left, top] = projectPoint(x, y + .31)
+        const [left, top] = projectSite(x, y + .31)
         const kind = match.sites[site]
         const project = BUILDINGS[kind]
         const remaining = bricksLeft(match, site)
@@ -84,11 +167,12 @@ export function City({ match, disabled, focused, focus, build }: {
             onClick={() => build(site)}>
             <span>{site + 1}</span>
           </button>
-          {latest?.site === site && latest.stars > 0 && <motion.span key={match.moves.length} className="map-reward" aria-hidden="true"
-            initial={{ opacity: 0, y: 4 }} animate={reduced ? { opacity: [0, 1, 0] } : { opacity: [0, 1, 1, 0], y: [4, 0, -20, -30] }}
-            transition={{ duration: .92 }}>
-            +{latest.stars} <Star size={14} />
-          </motion.span>}
+          {recent.map((move, index) => move.site === site && move.stars > 0 && <motion.span
+            key={match.moves.length - recent.length + index} className="map-reward" aria-hidden="true"
+            initial={{ opacity: 0, y: 4 }} animate={reduced ? { opacity: [0, 1, 0] } : { opacity: [0, 1, 1, 0], y: [4, 0, -14, -24], scale: [.87, 1, 1, 1] }}
+            transition={reduced ? { duration: .68 } : { delay: completionTime(move.bricks) / 1000, duration: .70, times: [0, .20, .68, 1] }}>
+            +{move.stars} <Star size={14} />
+          </motion.span>)}
         </div>
       })}
     </div>
