@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:drecco": "npm run build -- --mode drecco && node -e \"require('node:fs').renameSync('dist/drecco/index.html', 'dist/drecco/iframe.html')\"",
+    "package:drecco": "npm run build:drecco && node scripts/package-drecco.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test"

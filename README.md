@@ -39,3 +39,7 @@ npm run build
 ```
 
 Run `npm run build:drecco` to build the standalone Dr. Ecco version. Open `dist/drecco/iframe.html` directly in a browser to play it.
+
+## Dr. Ecco submission
+
+Run `npm run package:drecco` with `zip` installed to create `dist/drecco/last-brick.zip` and the matching `dist/drecco/content/games/2026/last-brick/` folder. The folder contains the standalone game, English rules and attribution, and a 4:3 thumbnail. Copy it to `content/games/2026/` in the Dr. Ecco repository, or use the ZIP for the maintainer's submission option.
