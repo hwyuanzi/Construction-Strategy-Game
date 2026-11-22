@@ -15,7 +15,7 @@ export function Dialog({ title, onClose, wide, children }: {
     return () => dialog?.close()
   }, [])
 
-  return <dialog ref={ref} className={`dialog${wide ? ' dialog-wide' : ''}`} aria-labelledby="dialog-title"
+  return <dialog ref={ref} className={`dialog glass${wide ? ' dialog-wide' : ''}`} aria-labelledby="dialog-title"
     onCancel={event => { event.preventDefault(); onClose() }}
     onClick={event => { if (event.target === event.currentTarget) onClose() }}>
     <article className="dialog-body">

@@ -6,7 +6,7 @@ import type { Painter, Project } from './townPainter'
 import { bench, car, flowerBed, fountain, lamp, sailboat, tree } from './townScenery'
 
 export const TOWN_WIDTH = 960
-export const TOWN_HEIGHT = 550
+export const TOWN_HEIGHT = 610
 export const BUILD_DURATION = 1080
 
 type Lot = [number, number]
@@ -21,7 +21,7 @@ export const BUILDING_COLORS: Record<Building, string> = {
 }
 
 function projectPoint(x: number, y: number, z = 0) {
-  return [480 + (x - y) * 25.8, 270 + (x + y) * 13.6 - z * 32] as const
+  return [480 + (x - y) * 25.8, 285 + (x + y) * 13.6 - z * 32] as const
 }
 
 export function plots(count: number): Lot[] {
@@ -48,7 +48,8 @@ export function townProjection(sites: readonly Building[], lots: Lot[]) {
   }))
   if (ceiling >= 21) return projectPoint
 
-  const scale = Math.min(1, (TOWN_HEIGHT - 42) / (519 - ceiling))
+  const bottom = TOWN_HEIGHT - 76
+  const scale = Math.min(1, (bottom - 24) / (bottom - ceiling))
   return (x: number, y: number, z = 0) => {
     const [left, top] = projectPoint(x, y, z)
     return [480 + (left - 480) * scale, 21 + (top - ceiling) * scale] as const

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Map as MapIcon, Navigation, Star } from 'lucide-react'
-import { BUILDINGS, bricksLeft, isCopyCoolingDown, turnsUntilOpen } from '../game/engine'
+import { BUILDINGS, bricksLeft, delivery, isCopyCoolingDown, ROUNDS, turnsUntilOpen } from '../game/engine'
 import type { Match } from '../game/engine'
-import { BUILD_DURATION, BUILDING_COLORS, completionTime, createTownRenderer, plots, TOWN_HEIGHT, TOWN_WIDTH, townProjection } from './town'
+import { BUILD_DURATION, completionTime, createTownRenderer, plots, TOWN_HEIGHT, TOWN_WIDTH, townProjection } from './town'
 import type { BuildAnimation } from './town'
 
 function TownCanvas({ match, focused, reduced }: { match: Match; focused?: number; reduced: boolean | null }) {
@@ -131,6 +131,7 @@ export function City({ match, disabled, focused, focus, build }: {
   build: (site: number) => void
 }) {
   const reduced = useReducedMotion()
+  const round = delivery(match)?.round
   const recent = match.moves.slice(-2)
   const lots = plots(match.sites.length)
   const projectSite = townProjection(match.sites, lots)
@@ -138,14 +139,18 @@ export function City({ match, disabled, focused, focus, build }: {
     .sort((a, b) => a.depth - b.depth).map(({ site }) => site)
 
   return <section className="city" aria-labelledby="city-title">
-    <header className="city-header">
-      <h2 id="city-title"><MapIcon size={19} aria-hidden="true" /> City map</h2>
-      {disabled ? <span>{match.sites.length} {match.sites.length === 1 ? 'site' : 'sites'}</span>
-        : <span className="map-prompt">Pick a numbered site</span>}
-    </header>
     <div className="city-scene">
       <TownCanvas match={match} focused={focused} reduced={reduced} />
-      <span className="compass" aria-hidden="true"><Navigation size={14} /> N</span>
+      <header className="map-toolbar">
+        <h2 id="city-title" className="glass"><MapIcon size={16} aria-hidden="true" /> City map</h2>
+        <div className="round glass">
+          <strong>Round {round ?? ROUNDS} <span>of {ROUNDS}</span></strong>
+          <div className="round-track" aria-hidden="true">{Array.from({ length: ROUNDS }, (_, index) =>
+            <i key={index} className={!round || index + 1 < round ? 'settled' : index + 1 === round ? 'current' : ''} />,
+          )}</div>
+        </div>
+      </header>
+      <span className="compass glass" aria-hidden="true"><Navigation size={13} /> N</span>
       {lots.map(([x, y], site) => {
         const [left, top] = projectSite(x, y + .31)
         const kind = match.sites[site]
@@ -159,13 +164,13 @@ export function City({ match, disabled, focused, focus, build }: {
           '--lot-layer': depthOrder.indexOf(site) + 1,
         } as CSSProperties
         return <div key={site} className="map-lot" style={position}>
-          <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}${closed ? ' map-closed' : ''}`}
-            disabled={disabled || closed} style={{ color: BUILDING_COLORS[kind] }}
+          <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}${closed ? ' site-closed' : ''}`}
+            disabled={disabled || closed}
             aria-label={`Map site ${site + 1}, ${project.name}, ${remaining} ${remaining === 1 ? 'brick' : 'bricks'} left, ${project.stars} stars`}
             aria-description={reopening ? `Reopens in ${reopening} ${reopening === 1 ? 'turn' : 'turns'}` : closed ? 'Cooldown for 1 turn' : undefined}
             onPointerEnter={() => focus(site)} onPointerLeave={() => focus()} onFocus={() => focus(site)} onBlur={() => focus()}
             onClick={() => build(site)}>
-            <span>{site + 1}</span>
+            <span className="site-badge" aria-hidden="true">{site + 1}</span>
           </button>
           {recent.map((move, index) => move.site === site && move.stars > 0 && <motion.span
             key={match.moves.length - recent.length + index} className="map-reward" aria-hidden="true"

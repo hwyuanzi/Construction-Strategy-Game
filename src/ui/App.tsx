@@ -1,30 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Bot, Check, CircleHelp, Clock3, Construction, History, Layers3, Lightbulb, Plus, ShoppingCart, SkipForward, Star, Ticket, Trophy, Truck } from 'lucide-react'
-import { motion } from 'framer-motion'
-import { BONUS_CARDS, BRICK_BUDGET, BUILDINGS, BUILDING_TYPES, buildLimit, bricksLeft, canPlaceBricks, CARD_TYPES, createMatch, delivery, isCopyCoolingDown, isSiteOpen, maxBuildLimit, playMove, ROUNDS, SKIP_LIMIT, SKIP_TURN, TURN_LIMIT, turnsUntilOpen } from '../game/engine'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRight, Bot, Check, ChevronDown, CircleHelp, Clock3, History, Layers3, Lightbulb, Plus, ShoppingCart, SkipForward, Star, Ticket, Trophy, Truck, UserRound } from 'lucide-react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { BONUS_CARDS, BRICK_BUDGET, BUILDINGS, BUILDING_TYPES, buildLimit, bricksLeft, canPlaceBricks, CARD_TYPES, createMatch, delivery, isCopyCoolingDown, isSiteOpen, maxBuildLimit, playMove, SKIP_TURN, turnsUntilOpen } from '../game/engine'
 import type { BonusCard, Match, Move, TurnAction } from '../game/engine'
 import HardWorker from '../game/bot.worker?worker&inline'
 import { chooseMove, DIFFICULTY_NAMES } from '../game/planner'
+import { BuildingArt } from './BuildingArt'
 import { City } from './City'
-import { Dialog } from './Dialog'
+import { Guide } from './Guide'
 import { DEFAULT_SETUP, playerCount, playerName, Setup } from './Setup'
 import type { GameSetup } from './Setup'
 
 function Stars({ count }: { count: number }) {
   return <span className="stars"><Star size={16} aria-hidden="true" /><b>{count}</b><span className="sr-only"> stars</span></span>
-}
-
-function Help({ close }: { close: () => void }) {
-  return <Dialog title="How to play" onClose={close}>
-    <ol className="rules">
-      <li><strong>Manage your bricks</strong><p>Each player starts with {BRICK_BUDGET} bricks for the game. After the opening round, you can spend up to {TURN_LIMIT} per turn.</p></li>
-      <li><strong>Choose bricks, then a site</strong><p>Choose an amount and pick one site. Each player can skip {SKIP_LIMIT} times. If you have no legal build, passing is free.</p></li>
-      <li><strong>Watch matching sites</strong><p>Other sites of the same type cool down for one turn after you build. The next player can still build on your site if it’s unfinished.</p></li>
-      <li><strong>Play a bonus card</strong><p>You get one Double Load and one Brick Cart. Double Load doubles the turn limit using your supply. Brick Cart supplies the first two bricks for free. Choose up to one card per build.</p></li>
-      <li><strong>Finish buildings to score</strong><p>Place the last brick to win the building’s stars. The site reopens after everyone takes one more turn. Most stars after {ROUNDS} rounds wins.</p></li>
-    </ol>
-    <button type="button" className="button primary" onClick={close}>Let’s build <ArrowRight size={16} /></button>
-  </Dialog>
 }
 
 function SiteList({ match, amount, disabled, focused, focus, build }: {
@@ -49,24 +37,26 @@ function SiteList({ match, amount, disabled, focused, focus, build }: {
         : onCooldown ? 'Cooldown · 1 turn'
         : canFinish ? (remaining < amount ? `Finish with ${remaining}` : 'Finish now')
         : exposesFinish ? 'Next can finish' : undefined
-      return <button type="button" className={`site-card type-${kind}${focused === site ? ' highlighted' : ''}`}
+      return <button type="button" className={`site-card type-${kind}${focused === site ? ' highlighted' : ''}${reopening || onCooldown ? ' site-closed' : ''}`}
         key={site} disabled={blocked} onClick={() => build(site)}
         onPointerEnter={() => focus(site)} onPointerLeave={() => focus()} onFocus={() => focus(site)} onBlur={() => focus()}
         aria-label={`Build ${project.name}, site ${site + 1}, ${remaining} ${remaining === 1 ? 'brick' : 'bricks'} left, ${project.stars} stars`}
         aria-description={preview}>
-        <span className="site-number" aria-hidden="true">{site + 1}</span>
+        <span className="site-badge" aria-hidden="true">{site + 1}</span>
+        <span className="site-art"><BuildingArt type={kind} /></span>
         <span className="site-info">
           <strong>{project.name}</strong>
-          <span className="site-need">{remaining} {remaining === 1 ? 'brick' : 'bricks'} left</span>
-          <span className="brick-track" aria-hidden="true">
-            {Array.from({ length: project.bricks }, (_, brick) => <i key={brick} className={brick < match.progress[site] ? 'filled' : ''} />)}
+          <span className="site-progress">
+            <span className="site-need">{remaining} {remaining === 1 ? 'brick' : 'bricks'} left</span>
+            <span className="brick-track" aria-hidden="true">
+              {Array.from({ length: project.bricks }, (_, brick) => <i key={brick} className={brick < match.progress[site] ? 'filled' : ''} />)}
+            </span>
           </span>
-        </span>
-        <span className="site-value"><Stars count={project.stars} />
           {preview && <span className={`finish-flag${exposesFinish ? ' risk-flag' : ''}${reopening || onCooldown ? ' reopening-flag' : ''}`}>
             {canFinish && <Check size={12} aria-hidden="true" />}{(reopening > 0 || onCooldown) && <Clock3 size={11} aria-hidden="true" />}{preview}
           </span>}
         </span>
+        <span className="site-value"><Stars count={project.stars} /></span>
       </button>
     })}
   </div>
@@ -93,7 +83,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
   const unavailable = !sitesOpen ? (match.sites.some((_, site) => isCopyCoolingDown(match, site)) ? 'No sites available this turn' : 'All sites are reopening')
     : (forced ? 'Out of bricks' : 'Use Brick Cart to build')
 
-  return <section className={`turn-card player-${load.player}`} aria-labelledby="turn-title">
+  return <section className={`turn-card glass player-${load.player}`} aria-labelledby="turn-title">
     <header className="turn-header">
       <div className="truck-icon">{disabled ? <Bot size={23} aria-hidden="true" /> : <Truck size={23} aria-hidden="true" />}</div>
       <div className="truck-current" aria-live="polite">
@@ -103,7 +93,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
     </header>
     {sitesOpen && (!forced || limit > 0) && <div className="turn-options">
       {limit > 0 && <div className="brick-picker" role="group" aria-label="Bricks to place">
-        <h3 className="step-title"><span className="step-number">1</span> Choose bricks</h3>
+        <h3>{amount > 0 ? 'Choose a site on the map or list' : 'Choose bricks'}</h3>
         <div className="brick-options">
           {Array.from({ length: limit }, (_, index) => {
             const count = index + 1
@@ -114,7 +104,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
         </div>
       </div>}
       <div className="bonus-tools">
-        <h3>Bonus cards {load.bricks > 0 && <span>Optional</span>}</h3>
+        <h3>Bonus cards</h3>
         <div className="bonus-cards" role="group" aria-label="Bonus cards">
           {CARD_TYPES.map(kind => {
             const used = !match.cards[load.player].includes(kind)
@@ -124,7 +114,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
               disabled={disabled || used || buildLimit(match, load, kind) <= load.bricks}
               aria-pressed={card === kind} onClick={() => chooseCard(kind)}>
               <span className="card-icon"><Icon size={16} aria-hidden="true" /></span>
-              <span><strong>{bonus.name}</strong><small>{used ? 'Used' : bonus.description}</small></span>
+              <span><strong>{bonus.name}</strong><small>{used ? 'Used' : kind === 'doubleLoad' ? '2× turn limit' : '2 free bricks'}</small></span>
               {card === kind && <Check className="card-check" size={12} aria-hidden="true" />}
             </button>
           })}
@@ -132,10 +122,12 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
       </div>
     </div>}
     <footer className="turn-footer">
-      {upcoming.length > 0 && <div className="truck-next" aria-label="Upcoming turn limits">
-        <small>Upcoming limits</small>
-        <div>{upcoming.map((item, index) => <span key={index}>{playerName(setup, item.player)} <b>{item.bricks}</b></span>)}</div>
-      </div>}
+      {upcoming.length > 0 && <details className="truck-next">
+        <summary>Upcoming limits <ChevronDown size={13} aria-hidden="true" /></summary>
+        <ul>{upcoming.map((item, index) =>
+          <li key={index}>{playerName(setup, item.player)} <b>{item.bricks} {item.bricks === 1 ? 'brick' : 'bricks'}</b></li>,
+        )}</ul>
+      </details>}
       <button type="button" className={`button ${forced ? 'primary' : 'skip-turn'}`}
         disabled={disabled || (!forced && match.skips[load.player] === 0)} onClick={skip}
         aria-describedby="skip-description">
@@ -147,13 +139,20 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
   </section>
 }
 
+function PlayerIcon({ setup, player }: { setup: GameSetup; player: number }) {
+  return <span className="score-icon" aria-hidden="true">{setup.mode === 'computer' && player === 1 ? <Bot size={19} /> : <UserRound size={18} />}</span>
+}
+
 function Scoreboard({ match, setup }: { match: Match; setup: GameSetup }) {
   const load = delivery(match)
   return <div className="scoreboard" aria-label="Stars earned">
     {match.scores.map((score, player) => <div key={player} className={`score player-${player}${load?.player === player ? ' active' : ''}`}>
-      <div className="score-name"><span className="score-icon" aria-hidden="true">{setup.mode === 'computer' && player === 1 ? <Bot size={17} /> : <span className="player-dot" />}</span>
-        <strong>{playerName(setup, player)}</strong>
-        {setup.mode === 'computer' && player === 1 && <small className="difficulty-label">{DIFFICULTY_NAMES[setup.difficulty]}</small>}
+      <div className="score-name"><PlayerIcon setup={setup} player={player} />
+        <div className="score-identity">
+          <strong>{playerName(setup, player)}</strong>
+          {setup.mode === 'computer' && player === 1 && <small className="difficulty-label">{DIFFICULTY_NAMES[setup.difficulty]}</small>}
+          {load?.player === player && <span className="sr-only">Current turn</span>}
+        </div>
       </div>
       <span className="score-value"><Stars count={score} /></span>
       <div className="score-stock">
@@ -190,7 +189,7 @@ function StrategyTips({ match }: { match: Match }) {
   }
 
   return <details className="strategy">
-    <summary><Lightbulb size={17} aria-hidden="true" /> Think it through</summary>
+    <summary><Lightbulb size={16} aria-hidden="true" /> Think it through <ChevronDown size={14} aria-hidden="true" /></summary>
     <p>Check the next player’s bonus cards before leaving an open site close to completion.</p>
     <dl>
       <div><dt>Easy <strong>{describe(easy)}</strong></dt><dd>Grabs the most stars it can win right now.</dd></div>
@@ -201,15 +200,31 @@ function StrategyTips({ match }: { match: Match }) {
 }
 
 function Results({ match, setup, restart }: { match: Match; setup: GameSetup; restart: () => void }) {
-  const best = Math.max(...match.scores)
-  const winners = match.scores.flatMap((score, player) => score === best ? [player] : [])
-  const name = playerName(setup, winners[0])
-  const title = winners.length > 1 ? 'A tie!' : name === 'You' ? 'You win!' : `${name} wins!`
-  const subtitle = winners.length > 1 ? `${winners.map(player => playerName(setup, player)).join(', ')} · ${best} stars each` : `${best} stars`
-  return <motion.section className="results" aria-labelledby="results-title" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-    <Trophy size={31} aria-hidden="true" />
-    <div><h2 id="results-title">{title}</h2><p>{subtitle}</p></div>
-    <button type="button" className="button primary" onClick={restart}>Play again <ArrowRight size={16} /></button>
+  const heading = useRef<HTMLHeadingElement>(null)
+  const reduced = useReducedMotion()
+  useEffect(() => heading.current?.focus(), [])
+  const standings = match.scores.map((score, player) => ({ score, player })).sort((a, b) => b.score - a.score)
+  const top = standings[0]
+  const name = playerName(setup, top.player)
+  const title = standings[1]?.score === top.score ? 'A tie!' : name === 'You' ? 'You win!' : `${name} wins!`
+  return <motion.section className="results" aria-labelledby="results-title" initial={reduced ? false : { opacity: 0 }} animate={{ opacity: 1 }}>
+    <header className="results-header">
+      <span className="trophy-icon"><Trophy size={24} aria-hidden="true" /></span>
+      <h2 ref={heading} tabIndex={-1} id="results-title">{title}</h2>
+      <button type="button" className="button primary" onClick={restart}>Play again <ArrowRight size={16} aria-hidden="true" /></button>
+    </header>
+    <h3 id="leaderboard-title">Leaderboard</h3>
+    <ol className="leaderboard" aria-labelledby="leaderboard-title" role="list">
+      {standings.map(({ score, player }) => {
+        const rank = standings.findIndex(entry => entry.score === score) + 1
+        return <li className={`standing player-${player}`} key={player}>
+          <span className="standing-rank"><span className="sr-only">Rank </span>{rank}</span>
+          <PlayerIcon setup={setup} player={player} />
+          <strong>{playerName(setup, player)}</strong>
+          <Stars count={score} />
+        </li>
+      })}
+    </ol>
   </motion.section>
 }
 
@@ -227,7 +242,6 @@ export function App() {
   const { match, setup } = session
   const load = delivery(match)
   const botTurn = load?.player === 1 && setup.mode === 'computer'
-  const round = load?.round ?? ROUNDS
   const amount = chosenBricks ?? 0
   const sitesOpen = match.sites.some((_, site) => isSiteOpen(match, site))
   const canChooseBricks = Boolean(load && !botTurn && sitesOpen && buildLimit(match, load, chosenCard) > 0)
@@ -303,53 +317,40 @@ export function App() {
   }
 
   return <>
-    <header className="main-header">
-      <div className="shell header-inner">
-        <div className="brand">
-          <span className="brand-mark"><Construction size={33} strokeWidth={1.75} aria-hidden="true" /></span>
-          <div><h1>Last Brick</h1><p>Place the last brick to claim the building’s stars.</p></div>
-        </div>
-        <div className="header-actions">
-          <button type="button" className="button header-help" aria-label="How to play" onClick={() => setModal('help')}><CircleHelp size={17} aria-hidden="true" /> <span>How to play</span></button>
-          <button type="button" className="button new-game" onClick={() => setModal('setup')}><Plus size={17} aria-hidden="true" /> New game</button>
-        </div>
+    <header className="shell main-header">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
+        <h1><span>Last</span>{' '}<span>Brick</span></h1>
+      </div>
+      <div className="header-actions">
+        <button type="button" className="button glass header-help" aria-label="How to play" onClick={() => setModal('help')}><CircleHelp size={17} aria-hidden="true" /> <span>How to play</span></button>
+        <button type="button" className="button primary" onClick={() => setModal('setup')}><Plus size={17} aria-hidden="true" /> New game</button>
       </div>
     </header>
-    <main className="shell">
-      <section className="match-overview" aria-label="Match standings and round">
-        <div className="round"><strong>Round {round} <span>of {ROUNDS}</span></strong>
-          <div className="round-track" aria-hidden="true">{Array.from({ length: ROUNDS }, (_, index) =>
-            <i key={index} className={index + 1 < round || !load ? 'settled' : index + 1 === round ? 'current' : ''} />,
-          )}</div>
+    <main className="shell game-layout">
+      <div className="world">
+        {load ? <Scoreboard match={match} setup={setup} /> : <Results match={match} setup={setup} restart={() => start(setup, true)} />}
+        <City match={match} disabled={!canBuild} focused={focused} focus={focus} build={build} />
+        {load && <TurnControls match={match} setup={setup} amount={amount} card={chosenCard} disabled={botTurn} sitesOpen={sitesOpen}
+          chooseAmount={chooseBricks} chooseCard={toggleCard} skip={() => takeTurn(SKIP_TURN)} />}
+        <div className="activity" role="status">
+          {match.moves.length > 0 && <>
+            <h2><History size={15} aria-hidden="true" /> Recent moves</h2>
+            <ul>{match.moves.slice(-2).map((move, index, moves) =>
+              <MoveNote key={match.moves.length - moves.length + index} move={move} match={match} setup={setup} />,
+            )}</ul>
+          </>}
         </div>
-        <Scoreboard match={match} setup={setup} />
-      </section>
-      <div className="game-layout">
-        {load ? <TurnControls match={match} setup={setup} amount={amount} card={chosenCard} disabled={botTurn} sitesOpen={sitesOpen}
-          chooseAmount={chooseBricks} chooseCard={toggleCard} skip={() => takeTurn(SKIP_TURN)} />
-          : <Results match={match} setup={setup} restart={() => start(setup, true)} />}
-        <div className="world">
-          <City match={match} disabled={!canBuild} focused={focused} focus={focus} build={build} />
-          <section className="activity" aria-labelledby="activity-title">
-            <h2 id="activity-title"><History size={16} aria-hidden="true" /> Recent moves</h2>
-            <div role="status">
-              {match.moves.length > 0 ? <ul>{match.moves.slice(-2).map((move, index, moves) =>
-                <MoveNote key={match.moves.length - moves.length + index} move={move} match={match} setup={setup} />,
-              )}</ul> : <p>No moves yet.</p>}
-            </div>
-          </section>
-        </div>
+      </div>
+      <div className="site-rail">
         <aside className={`site-panel${canBuild ? ' ready' : ''}`} aria-labelledby="site-title">
-          <header>
-            <h2 id="site-title" className="step-title">{canChooseBricks && <span className="step-number">2</span>} {canChooseBricks ? 'Pick a site' : 'Building sites'}</h2>
-            {canChooseBricks && <p role="status">{canBuild ? `Place ${amount} ${amount === 1 ? 'brick' : 'bricks'} on the map or in the list.` : 'Choose a brick amount to unlock sites.'}</p>}
-          </header>
+          <header aria-live="polite"><h2 id="site-title">{canBuild ? 'Pick a site' : 'Building sites'}</h2></header>
           <SiteList match={match} amount={amount} disabled={!canBuild} focused={focused} focus={focus} build={build} />
           {load && <StrategyTips match={match} />}
         </aside>
       </div>
     </main>
-    {modal === 'help' && <Help close={() => setModal(undefined)} />}
+    {modal === 'help' && <Guide close={() => setModal(undefined)} />}
     {modal === 'setup' && <Setup initial={setup} start={start} close={() => setModal(undefined)} />}
   </>
 }
