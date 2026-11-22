@@ -165,7 +165,7 @@ export function City({ match, disabled, focused, focus, build }: {
         } as CSSProperties
         return <div key={site} className="map-lot" style={position}>
           <button type="button" className={`map-target type-${kind}${focused === site ? ' highlighted' : ''}${closed ? ' site-closed' : ''}`}
-            disabled={disabled || closed}
+            disabled={disabled || closed} data-sound="handled"
             aria-label={`Map site ${site + 1}, ${project.name}, ${remaining} ${remaining === 1 ? 'brick' : 'bricks'} left, ${project.stars} stars`}
             aria-description={reopening ? `Reopens in ${reopening} ${reopening === 1 ? 'turn' : 'turns'}` : closed ? 'Cooldown for 1 turn' : undefined}
             onPointerEnter={() => focus(site)} onPointerLeave={() => focus()} onFocus={() => focus(site)} onBlur={() => focus()}

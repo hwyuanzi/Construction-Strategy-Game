@@ -11,6 +11,8 @@ iframe_container_height = 768
 
 Last Brick is a turn-based construction game for two to six players on one device, or one player against the computer. Finish buildings to win stars. The player with the most stars after six rounds wins. Tied players share their rank.
 
+Game sound is off when the page opens. Use the speaker button at the top to turn it on or mute it again.
+
 ### On your turn
 
 1. Click or tap how many bricks to place, then choose one building on the map or in **Building sites**.

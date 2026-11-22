@@ -1,23 +1,27 @@
 # Last Brick
 
-Each player starts with 12 bricks for the entire game and gets six turns. On your turn, choose how many bricks to place and pick one site. The default opening limit is 2 bricks per player, and later turns have a base limit of 3. You can skip up to twice to save your supply. If you have no legal build, **Pass turn** costs no skip.
+A turn-based construction game by Haowen Yuan for NYU's Heuristic Problem Solving course. Place the last brick at a building site to earn its stars. Play against the computer or share one device with up to six players.
 
-After a player places bricks, other sites of the same type cool down for the next turn. The next player can still build on the same site if it’s unfinished. Whoever places the last brick takes the building’s stars. That site reopens with an empty foundation after everyone takes one more turn. Most stars wins.
+## Run locally
 
-Each player gets one **Double Load** card and one **Brick Cart** card. Double Load doubles your placement limit for one build, up to your remaining supply. Brick Cart supplies the first two bricks for free and lets you spend your usual allowance on top. Select one card before building. It is spent when you place the bricks.
-
-## Play
-
-Use Node.js 22 and npm.
+Use Node.js 22 and npm. From the repository root, run:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Select a number next to **Choose bricks**, then click a building on the isometric map or in the site list. The scoreboard shows each player’s remaining bricks, skips, and cards. The site list marks cooldowns and flags when your selected amount could leave a finish for the next player, including their available bonuses.
+Open [http://localhost:5173](http://localhost:5173), or the local URL Vite prints. Click the speaker button to enable the ambient music and game cues. Sound starts off on every page load.
 
-**New game** lets you play against the computer or with two to six people on one device. Choose up to 12 sites from five building types, set each player’s opening limit to one to seven bricks, and choose who starts in a computer game. Rematches rotate the starting player.
+## Play
+
+Choose a brick count, then select a building on the map or in **Building sites**. Each player starts with 12 bricks and gets six turns. The default opening limit is 2 bricks per player, and later turns allow up to 3 before bonuses. You can skip twice. If you have no legal build, **Pass turn** is free.
+
+After you place bricks, the other sites of the same type cool down for the next player. That player can continue your site if it's unfinished. The player who places the last brick takes the site's stars, and the site reopens with an empty foundation after every player has taken one more turn.
+
+Select a bonus card before you build. **Double Load** doubles the current placement limit using your own brick supply. **Brick Cart** adds up to two bricks to the limit and pays for the first two. Each card can be used once per game.
+
+The live scoreboard above the map tracks stars and remaining resources. The final leaderboard ranks players by stars and gives tied players the same rank. Open **How to play** for the full rules. Use **New game** to change the game mode, difficulty, sites, or opening limits.
 
 ## Computer strategies
 
@@ -38,8 +42,24 @@ npm run test:e2e
 npm run build
 ```
 
-Run `npm run build:drecco` to build the standalone Dr. Ecco version. Open `dist/drecco/iframe.html` directly in a browser to play it.
+`npm run build` generates the standard static site in `dist/`. Use `npm run preview` to serve that build locally.
 
-## Dr. Ecco submission
+## Build the Dr. Ecco submission
 
-Run `npm run package:drecco` with `zip` installed to create `dist/drecco/last-brick.zip` and the matching `dist/drecco/content/games/2026/last-brick/` folder. The folder contains the standalone game, English rules and attribution, and a 4:3 thumbnail. Copy it to `content/games/2026/` in the Dr. Ecco repository, or use the ZIP for the maintainer's submission option.
+With `zip` installed, run:
+
+```sh
+npm run package:drecco
+```
+
+The build creates `dist/drecco/last-brick.zip` and `dist/drecco/content/games/2026/last-brick/` with these three files:
+
+| File | Contents |
+| --- | --- |
+| `iframe.html` | Standalone game with inline JavaScript, CSS, fonts, and the Hard-mode worker. Web Audio synthesizes sound locally after the player switches it on. |
+| `index.md` | Zola metadata, English rules, and the Haowen Yuan credit. The 768 px frame container gives six-player games room for all turn controls. |
+| `thumbnail.png` | A 320 × 240 preview of the game map. |
+
+Open `dist/drecco/content/games/2026/last-brick/iframe.html` directly in a browser to test it offline. For an iframe preview, copy the generated `last-brick/` folder to `content/games/2026/` in a local checkout of Dr. Ecco. Run `zola serve` from that checkout and visit [the local game page](http://127.0.0.1:1111/games/2026/last-brick/).
+
+Submit the folder in a pull request titled **2026: Last Brick** or send the ZIP to the maintainer. [Dr. Ecco submission guide](https://github.com/shela-wu/drecco/blob/master/CONTRIBUTING.md)

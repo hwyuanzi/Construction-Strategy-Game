@@ -9,12 +9,114 @@ function place(page: Page, bricks: number) {
   return page.getByRole('button', { name: `Place ${bricks} ${bricks === 1 ? 'brick' : 'bricks'}`, exact: true })
 }
 
+async function expectHeaderActionsToMatch(page: Page) {
+  const help = await page.getByRole('button', { name: 'How to play' }).boundingBox()
+  const start = await page.getByRole('button', { name: 'New game' }).boundingBox()
+  expect({ width: help!.width, height: help!.height }).toEqual({ width: start!.width, height: start!.height })
+}
+
+test('opts in to sound and can mute both the soundtrack and game cues', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() => {
+    const probe = { opened: 0, closed: 0, starts: [] as number[] }
+    Reflect.set(window, 'audioProbe', probe)
+    window.AudioContext = class extends AudioContext {
+      constructor() {
+        super()
+        probe.opened++
+      }
+
+      createOscillator() {
+        const oscillator = super.createOscillator()
+        const start = oscillator.start.bind(oscillator)
+        oscillator.start = (when = 0) => {
+          probe.starts.push(when)
+          start(when)
+        }
+        return oscillator
+      }
+
+      async close() {
+        await super.close()
+        probe.closed++
+      }
+    }
+  })
+  const readAudio = () => page.evaluate(() =>
+    Reflect.get(window, 'audioProbe') as { opened: number; closed: number; starts: number[] },
+  )
+  const sound = page.getByRole('button', { name: 'Game sound' })
+  const help = page.getByRole('button', { name: 'How to play' })
+  const close = page.getByRole('button', { name: 'Close', exact: true })
+
+  await page.goto('/')
+  await expect(sound).toHaveAttribute('aria-pressed', 'false')
+  await help.click()
+  await close.click()
+  expect(await readAudio()).toEqual({ opened: 0, closed: 0, starts: [] })
+
+  await sound.focus()
+  await page.keyboard.press('Space')
+  await expect(sound).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(async () => (await readAudio()).starts.length).toBeGreaterThan(4)
+  const beforeClick = (await readAudio()).starts.length
+  await help.click()
+  expect((await readAudio()).starts.length).toBeGreaterThan(beforeClick)
+  await close.click()
+  await page.getByRole('button', { name: 'New game' }).click()
+  await page.getByRole('button', { name: 'Pass & play' }).click()
+  await page.getByRole('button', { name: 'Start game' }).click()
+
+  await place(page, 2).click()
+  const beforeScore = (await readAudio()).starts.length
+  await site(page, 'House').click()
+  await expect(page.locator('.score.player-0')).toContainText('2 stars')
+  await expect.poll(async () => (await readAudio()).starts.length).toBeGreaterThan(beforeScore + 4)
+  for (let turn = 1; turn < 12; turn++) {
+    if (await place(page, 1).isVisible()) {
+      await place(page, 1).click()
+      await page.getByRole('button', { name: /^Build / }).and(page.locator(':enabled')).first().click()
+    } else {
+      await page.getByRole('button', { name: 'Pass turn' }).click()
+    }
+  }
+  await expect(page.getByRole('list', { name: 'Leaderboard' })).toBeVisible()
+  // The closing chord schedules several voices together.
+  await expect.poll(async () => {
+    const { starts } = await readAudio()
+    return starts.some(at => starts.filter(other => other === at).length >= 8)
+  }).toBe(true)
+
+  await sound.click()
+  await expect(sound).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(async () => (await readAudio()).closed).toBe(1)
+  const afterMute = await readAudio()
+  await page.getByRole('button', { name: 'Play again' }).click()
+  await help.click()
+  await close.click()
+  expect(await readAudio()).toEqual(afterMute)
+
+  await sound.click()
+  await expect.poll(async () => (await readAudio()).opened).toBe(2)
+  await page.reload()
+  await expect(sound).toHaveAttribute('aria-pressed', 'false')
+  expect((await readAudio()).opened).toBe(0)
+})
+
 test('builds by clicking the city and finishes against Normal', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Last Brick' })).toBeVisible()
   await expect(page.getByText('Your turn', { exact: true })).toBeVisible()
+  await expectHeaderActionsToMatch(page)
+  await expect(page.getByRole('region', { name: 'Scoreboard' }).getByText('Current turn')).toBeVisible()
+  for (const title of ['Your turn', 'Building sites']) {
+    const heading = page.getByRole('heading', { name: title, exact: true })
+    const icon = page.locator('header').filter({ has: heading }).locator('.section-icon')
+    const iconBox = await icon.boundingBox()
+    expect(iconBox!.x + iconBox!.width).toBeLessThan((await heading.boundingBox())!.x)
+  }
   await expect(page.getByRole('heading', { name: 'Recent moves' })).toHaveCount(0)
   const mapBox = await page.getByRole('region', { name: 'City map' }).boundingBox()
   const scoreBox = await page.locator('.scoreboard').boundingBox()
@@ -192,6 +294,7 @@ test('keeps settings usable at phone width and plays Easy with reduced motion', 
   await page.setViewportSize({ width: 320, height: 640 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
+  await expectHeaderActionsToMatch(page)
   const mapBox = await page.getByRole('region', { name: 'City map' }).boundingBox()
   const turnBox = await page.getByRole('region', { name: 'Your turn' }).boundingBox()
   expect(turnBox!.y).toBeGreaterThan(mapBox!.y + mapBox!.height)

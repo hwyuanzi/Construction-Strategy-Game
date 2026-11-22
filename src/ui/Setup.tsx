@@ -127,9 +127,9 @@ export function Setup({ initial, start, close }: {
                 <small>{bricks} bricks <span aria-hidden="true">·</span> <Star size={11} aria-label="stars" /> {stars}</small>
               </div>
               <div className="stepper" aria-label={`${name} count`}>
-                <button type="button" aria-label={`Remove ${name}`} disabled={!qty} onClick={() => changeBuildings(kind, -1)}><Minus size={15} /></button>
+                <button type="button" aria-label={`Remove ${name}`} disabled={!qty} data-sound="wood" onClick={() => changeBuildings(kind, -1)}><Minus size={15} /></button>
                 <output aria-label={name + ' quantity'}>{qty}</output>
-                <button type="button" aria-label={`Add ${name}`} disabled={total >= MAX_SITES} onClick={() => changeBuildings(kind, 1)}><Plus size={15} /></button>
+                <button type="button" aria-label={`Add ${name}`} disabled={total >= MAX_SITES} data-sound="wood" onClick={() => changeBuildings(kind, 1)}><Plus size={15} /></button>
               </div>
             </div>
           })}
@@ -138,7 +138,7 @@ export function Setup({ initial, start, close }: {
     </div>
     <footer className="setup-footer">
       {total === 0 && <p>Choose at least one building.</p>}
-      <button type="button" className="button primary" disabled={total === 0} onClick={() => start(draft)}>Start game <ArrowRight size={17} /></button>
+      <button type="button" className="button primary" disabled={total === 0} data-sound="wood" onClick={() => start(draft)}>Start game <ArrowRight size={17} /></button>
     </footer>
   </Dialog>
 }

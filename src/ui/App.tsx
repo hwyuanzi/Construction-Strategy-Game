@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Bot, Check, ChevronDown, CircleHelp, Clock3, History, Layers3, Lightbulb, Plus, ShoppingCart, SkipForward, Star, Ticket, Trophy, Truck, UserRound } from 'lucide-react'
+import { ArrowRight, Bot, Building2, Check, ChevronDown, CircleHelp, Clock3, History, Lightbulb, Plus, ShoppingCart, SkipForward, Star, Trophy, Truck, UserRound, Volume2, VolumeX } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { BONUS_CARDS, BRICK_BUDGET, BUILDINGS, BUILDING_TYPES, buildLimit, bricksLeft, canPlaceBricks, CARD_TYPES, createMatch, delivery, isCopyCoolingDown, isSiteOpen, maxBuildLimit, playMove, SKIP_TURN, turnsUntilOpen } from '../game/engine'
 import type { BonusCard, Match, Move, TurnAction } from '../game/engine'
@@ -10,6 +10,7 @@ import { City } from './City'
 import { Guide } from './Guide'
 import { DEFAULT_SETUP, playerCount, playerName, Setup } from './Setup'
 import type { GameSetup } from './Setup'
+import { useGameAudio } from './useGameAudio'
 
 function Stars({ count }: { count: number }) {
   return <span className="stars"><Star size={16} aria-hidden="true" /><b>{count}</b><span className="sr-only"> stars</span></span>
@@ -38,7 +39,7 @@ function SiteList({ match, amount, disabled, focused, focus, build }: {
         : canFinish ? (remaining < amount ? `Finish with ${remaining}` : 'Finish now')
         : exposesFinish ? 'Next can finish' : undefined
       return <button type="button" className={`site-card type-${kind}${focused === site ? ' highlighted' : ''}${reopening || onCooldown ? ' site-closed' : ''}`}
-        key={site} disabled={blocked} onClick={() => build(site)}
+        key={site} disabled={blocked} data-sound="handled" onClick={() => build(site)}
         onPointerEnter={() => focus(site)} onPointerLeave={() => focus()} onFocus={() => focus(site)} onBlur={() => focus()}
         aria-label={`Build ${project.name}, site ${site + 1}, ${remaining} ${remaining === 1 ? 'brick' : 'bricks'} left, ${project.stars} stars`}
         aria-description={preview}>
@@ -85,7 +86,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
 
   return <section className={`turn-card glass player-${load.player}`} aria-labelledby="turn-title">
     <header className="turn-header">
-      <div className="truck-icon">{disabled ? <Bot size={23} aria-hidden="true" /> : <Truck size={23} aria-hidden="true" />}</div>
+      <span className="section-icon" aria-hidden="true">{disabled ? <Bot size={19} /> : <Truck size={19} />}</span>
       <div className="truck-current" aria-live="polite">
         <h2 id="turn-title">{turn}</h2>
         <p>{disabled ? 'Choosing a move…' : sitesOpen && limit > 0 ? `Up to ${limit} ${limit === 1 ? 'brick' : 'bricks'} this turn` : unavailable}</p>
@@ -110,7 +111,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
             const used = !match.cards[load.player].includes(kind)
             const bonus = BONUS_CARDS[kind]
             const Icon = kind === 'doubleLoad' ? Truck : ShoppingCart
-            return <button key={kind} type="button" className="bonus-card"
+            return <button key={kind} type="button" className="bonus-card" data-sound="wood"
               disabled={disabled || used || buildLimit(match, load, kind) <= load.bricks}
               aria-pressed={card === kind} onClick={() => chooseCard(kind)}>
               <span className="card-icon"><Icon size={16} aria-hidden="true" /></span>
@@ -129,7 +130,7 @@ function TurnControls({ match, setup, amount, card, disabled, sitesOpen, chooseA
         )}</ul>
       </details>}
       <button type="button" className={`button ${forced ? 'primary' : 'skip-turn'}`}
-        disabled={disabled || (!forced && match.skips[load.player] === 0)} onClick={skip}
+        disabled={disabled || (!forced && match.skips[load.player] === 0)} data-sound="handled" onClick={skip}
         aria-describedby="skip-description">
         <SkipForward size={15} aria-hidden="true" /> {forced ? 'Pass turn' : 'Skip turn'}
         {!forced && <span className="skip-count" aria-hidden="true">{match.skips[load.player]} left</span>}
@@ -145,22 +146,28 @@ function PlayerIcon({ setup, player }: { setup: GameSetup; player: number }) {
 
 function Scoreboard({ match, setup }: { match: Match; setup: GameSetup }) {
   const load = delivery(match)
-  return <div className="scoreboard" aria-label="Stars earned">
-    {match.scores.map((score, player) => <div key={player} className={`score player-${player}${load?.player === player ? ' active' : ''}`}>
-      <div className="score-name"><PlayerIcon setup={setup} player={player} />
+  return <section className="scoreboard" aria-label="Scoreboard" data-players={match.scores.length}>
+    {match.scores.map((score, player) => {
+      const active = load?.player === player
+      const difficulty = setup.mode === 'computer' && player === 1 ? DIFFICULTY_NAMES[setup.difficulty] : undefined
+      const skips = match.skips[player]
+      const cards = match.cards[player].length
+      return <div key={player} className={`score player-${player}${active ? ' active' : ''}`}>
         <div className="score-identity">
-          <strong>{playerName(setup, player)}</strong>
-          {setup.mode === 'computer' && player === 1 && <small className="difficulty-label">{DIFFICULTY_NAMES[setup.difficulty]}</small>}
-          {load?.player === player && <span className="sr-only">Current turn</span>}
+          <div className="score-name"><span className="player-dot" aria-hidden="true" /><strong>{playerName(setup, player)}</strong></div>
+          {(active || difficulty) && <div className="score-meta">
+            {active && <span className="score-turn">Current turn</span>}
+            {difficulty && <span>{difficulty}</span>}
+          </div>}
+        </div>
+        <span className="score-value"><Stars count={score} /></span>
+        <div className="score-stock">
+          <span><b>{match.reserves[player]}</b> / {BRICK_BUDGET} bricks</span>
+          <span>{skips} {skips === 1 ? 'skip' : 'skips'} · {cards} {cards === 1 ? 'card' : 'cards'}</span>
         </div>
       </div>
-      <span className="score-value"><Stars count={score} /></span>
-      <div className="score-stock">
-        <span><Layers3 size={13} aria-hidden="true" /> {match.reserves[player]} / {BRICK_BUDGET} bricks</span>
-        <span><Ticket size={13} aria-hidden="true" /> <span>{match.skips[player]} {match.skips[player] === 1 ? 'skip' : 'skips'} · {match.cards[player].length} {match.cards[player].length === 1 ? 'card' : 'cards'}</span></span>
-      </div>
-    </div>)}
-  </div>
+    })}
+  </section>
 }
 
 function MoveNote({ move, match, setup }: { move: Move; match: Match; setup: GameSetup }) {
@@ -211,7 +218,7 @@ function Results({ match, setup, restart }: { match: Match; setup: GameSetup; re
     <header className="results-header">
       <span className="trophy-icon"><Trophy size={24} aria-hidden="true" /></span>
       <h2 ref={heading} tabIndex={-1} id="results-title">{title}</h2>
-      <button type="button" className="button primary" onClick={restart}>Play again <ArrowRight size={16} aria-hidden="true" /></button>
+      <button type="button" className="button primary" data-sound="wood" onClick={restart}>Play again <ArrowRight size={16} aria-hidden="true" /></button>
     </header>
     <h3 id="leaderboard-title">Leaderboard</h3>
     <ol className="leaderboard" aria-labelledby="leaderboard-title" role="list">
@@ -240,6 +247,7 @@ export function App() {
   const [chosenBricks, chooseBricks] = useState<number>()
   const [chosenCard, chooseCard] = useState<BonusCard>()
   const { match, setup } = session
+  const audio = useGameAudio(match, setup.mode === 'computer')
   const load = delivery(match)
   const botTurn = load?.player === 1 && setup.mode === 'computer'
   const amount = chosenBricks ?? 0
@@ -316,15 +324,23 @@ export function App() {
     chooseCard(next)
   }
 
-  return <>
+  return <div onClickCapture={event => {
+    const control = event.target instanceof Element && event.target.closest('button:not(:disabled), summary')
+    const cue = control && control.getAttribute('data-sound')
+    if (control && cue !== 'handled') audio.click(cue === 'wood')
+  }}>
     <header className="shell main-header">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
         <h1><span>Last</span>{' '}<span>Brick</span></h1>
       </div>
       <div className="header-actions">
-        <button type="button" className="button glass header-help" aria-label="How to play" onClick={() => setModal('help')}><CircleHelp size={17} aria-hidden="true" /> <span>How to play</span></button>
-        <button type="button" className="button primary" onClick={() => setModal('setup')}><Plus size={17} aria-hidden="true" /> New game</button>
+        <button type="button" className="button glass header-sound" aria-label="Game sound" aria-pressed={audio.enabled}
+          title={audio.enabled ? 'Mute sound' : 'Turn sound on'} data-sound="handled" onClick={audio.toggle}>
+          {audio.enabled ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}
+        </button>
+        <button type="button" className="button glass header-action header-help" onClick={() => setModal('help')}><CircleHelp size={17} aria-hidden="true" /> How to play</button>
+        <button type="button" className="button primary header-action" data-sound="wood" onClick={() => setModal('setup')}><Plus size={17} aria-hidden="true" /> New game</button>
       </div>
     </header>
     <main className="shell game-layout">
@@ -344,7 +360,10 @@ export function App() {
       </div>
       <div className="site-rail">
         <aside className={`site-panel${canBuild ? ' ready' : ''}`} aria-labelledby="site-title">
-          <header aria-live="polite"><h2 id="site-title">{canBuild ? 'Pick a site' : 'Building sites'}</h2></header>
+          <header aria-live="polite">
+            <span className="section-icon" aria-hidden="true"><Building2 size={19} /></span>
+            <h2 id="site-title">{canBuild ? 'Pick a site' : 'Building sites'}</h2>
+          </header>
           <SiteList match={match} amount={amount} disabled={!canBuild} focused={focused} focus={focus} build={build} />
           {load && <StrategyTips match={match} />}
         </aside>
@@ -352,5 +371,5 @@ export function App() {
     </main>
     {modal === 'help' && <Guide close={() => setModal(undefined)} />}
     {modal === 'setup' && <Setup initial={setup} start={start} close={() => setModal(undefined)} />}
-  </>
+  </div>
 }
